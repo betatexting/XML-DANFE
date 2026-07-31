@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Consulta DANFE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Press+Start+2P&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel hero-band">
+        <div class="hero-meta">
+          <div class="hero-copy">
+            <p class="eyebrow">BetaTexting</p>
+            <h1>consultor <span>xml</span></h1>
+          </div>
+          <p class="description">
+            Cole chaves, trechos de XML ou anexe PDFs da DANFE para localizar a chave e baixar
+            os XMLs em um painel unico.
+          </p>
+        </div>
+        <div class="hero-chips" aria-label="Recursos ativos">
+
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="beam beam-left" aria-hidden="true"></div>
+        <div class="beam beam-right" aria-hidden="true"></div>
+
+        <section class="panel input-panel">
+          <div class="section-head">
+            <p class="section-label">Entrada de chaves</p>
+          </div>
+
+          <form id="process-form" class="form-shell">
+            <label class="field-label" for="rawKeys">Bloco de entrada</label>
+            <div class="frame frame-input">
+              <textarea
+                id="rawKeys"
+                name="rawKeys"
+                rows="12"
+                placeholder="Cole chaves de 44 digitos ou trechos de XML"
+                required
+              ></textarea>
+            </div>
+
+            <div class="action-row">
+              <button id="submitButton" type="submit" class="primary-button">Processar</button>
+              <label class="secondary-button upload-trigger" for="pdfFiles">Anexar PDFs</label>
+            </div>
+          </form>
+
+          <div class="support-grid">
+            <article class="info-card">
+              <p class="info-card-label">Arquivos anexados</p>
+              <p class="info-card-note">
+                PDFs escaneados como imagem podem precisar de OCR antes da extracao.
+              </p>
+            </article>
+
+            <article class="info-card">
+              <p class="info-card-label">Execução</p>
+              <label class="toggle" for="headless">
+                <input id="headless" name="headless" type="checkbox" />
+                <span class="toggle-indicator" aria-hidden="true"></span>
+                <span class="toggle-copy">oculto</span>
+              </label>
+              <button id="pdfSubmitButton" type="button" class="ghost-button" disabled>
+                Processar PDFs
+              </button>
+            </article>
+          </div>
+
+          <input
+            id="pdfFiles"
+            name="pdfFiles"
+            type="file"
+            accept=".pdf,application/pdf"
+            multiple
+            class="visually-hidden"
+          />
+        </section>
+
+        <section class="panel results-panel">
+          <div class="section-head section-head-results">
+            <div>
+              <p class="section-label">Processadas</p>
+            
+            </div>
+            <p id="summary" class="summary">Nenhum processamento iniciado.</p>
+          </div>
+
+          <div class="frame frame-results">
+            <div id="emptyState" class="empty-state">
+              <p id="emptyTitle" class="empty-title">Aguardando consulta</p>
+              <p id="emptyCopy" class="empty-copy">
+                Os resultados aparecem aqui com status, chave localizada e nome do XML gerado.
+              </p>
+            </div>
+            <ul id="results" class="results" hidden></ul>
+          </div>
+        </section>
+      </section>
+
+      <section class="footer-grid">
+        <article class="panel utility-panel">
+          <p class="section-label">Onde salvar?</p>
+          <div
+            id="downloadsDir"
+            class="save-path"
+            role="button"
+            tabindex="0"
+            aria-label="Selecionar pasta para salvar os XMLs"
+          >
+            Carregando destino...
+          </div>
+          <p class="utility-copy">
+            Os XMLs baixados continuam organizados nessa pasta local configurada no servidor.
+          </p>
+        </article>
+
+        <article class="panel utility-panel">
+          <p class="section-label">Fluxos ativos</p>
+          <div class="flow-list">
+            <div class="flow-item">
+              <strong>Chaves ou XML</strong>
+              <span>Processamento direto pelo campo principal com uma unica acao.</span>
+            </div>
+            <div class="flow-item">
+              <strong>PDFs</strong>
+              <span>Selecione um ou mais arquivos e dispare a extracao pelo painel lateral.</span>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

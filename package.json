@@ -1,0 +1,17 @@
+{
+  "name": "consulta-danfe-automacao",
+  "version": "0.1.0",
+  "description": "Interface simples para consultar chaves DANFE e baixar arquivos via Playwright.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "playwright:install": "node scripts/install-playwright.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.54.1"
+  }
+}

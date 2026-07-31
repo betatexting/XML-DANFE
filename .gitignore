@@ -1,0 +1,10 @@
+node_modules/
+.npm-cache/
+downloads/
+playwright-report/
+test-results/
+.env
+.downloads-dir.json
+.playwright-browsers/
+debug.log
+tmp-*
