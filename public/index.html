@@ -140,6 +140,30 @@
           </div>
         </article>
       </section>
+
+      <section class="panel report-panel">
+        <div class="section-head report-head">
+          <div>
+            <p class="section-label">Relatorio final</p>
+            <p id="reportMeta" class="utility-copy">
+              O fechamento da ultima rodada fica salvo aqui, mesmo quando a fila da tela
+              reinicia.
+            </p>
+          </div>
+          <div class="report-actions">
+            <button id="copyReportButton" type="button" class="ghost-button" disabled>
+              Copiar relatorio
+            </button>
+            <button id="downloadReportButton" type="button" class="secondary-button" disabled>
+              Baixar .txt
+            </button>
+          </div>
+        </div>
+
+        <div class="frame frame-report">
+          <pre id="reportOutput" class="report-output">Nenhum relatorio final disponivel ainda.</pre>
+        </div>
+      </section>
     </main>
 
     <script src="/app.js"></script>

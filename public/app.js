@@ -11,6 +11,13 @@ const emptyTitle = document.querySelector("#emptyTitle");
 const emptyCopy = document.querySelector("#emptyCopy");
 const fileSummary = document.querySelector("#fileSummary");
 const downloadsDirField = document.querySelector("#downloadsDir");
+const reportMeta = document.querySelector("#reportMeta");
+const reportOutput = document.querySelector("#reportOutput");
+const copyReportButton = document.querySelector("#copyReportButton");
+const downloadReportButton = document.querySelector("#downloadReportButton");
+const REPORT_STORAGE_KEY = "consultaDanfe:lastReport";
+let currentReportText = "";
+let currentReportFileName = "";
 
 function escapeHtml(value) {
   return String(value)
@@ -160,6 +167,158 @@ function getResultCounts(results) {
     successCount,
     errorCount
   };
+}
+
+function formatDateTime(value) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+    timeZone: "America/Sao_Paulo"
+  }).format(new Date(value));
+}
+
+function formatFileTimestamp(value) {
+  const date = new Date(value);
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+function describeResult(result) {
+  const parts = [];
+
+  if (result.sourceName) {
+    parts.push(`PDF ${result.sourceName}`);
+  }
+
+  if (result.key) {
+    parts.push(`Chave ${result.key}`);
+  }
+
+  return parts.length > 0 ? parts.join(" | ") : "Item sem identificador";
+}
+
+function buildReportFileName(label, finishedAt) {
+  const normalizedLabel = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return `relatorio-${normalizedLabel || "consulta"}-${formatFileTimestamp(finishedAt)}.txt`;
+}
+
+function buildFinalReport({ label, results, failedMessage, startedAt, finishedAt }) {
+  const { successCount, errorCount } = getResultCounts(results);
+  const succeeded = results.filter((item) => item.status === "success");
+  const failed = results.filter((item) => item.status !== "success");
+  const summaryText = `${successCount} ok / ${errorCount} falhas / ${results.length} total.`;
+  const statusText = failedMessage
+    ? "interrompido"
+    : errorCount > 0
+      ? "concluido com falhas"
+      : "concluido sem falhas";
+  const lines = [
+    `Relatorio final - ${label}`,
+    `Iniciado em: ${formatDateTime(startedAt)}`,
+    `Finalizado em: ${formatDateTime(finishedAt)}`,
+    `Status geral: ${statusText}`,
+    `Resumo: ${summaryText}`
+  ];
+
+  if (failedMessage) {
+    lines.push(`Mensagem final: ${failedMessage}`);
+  }
+
+  if (succeeded.length > 0) {
+    lines.push("", "Sucessos:");
+
+    for (const result of succeeded) {
+      lines.push(`- ${describeResult(result)} -> ${result.fileName || "arquivo nao informado"}`);
+    }
+  }
+
+  if (failed.length > 0) {
+    lines.push("", "Falhas:");
+
+    for (const result of failed) {
+      lines.push(`- ${describeResult(result)} -> ${result.message || "erro desconhecido"}`);
+    }
+  }
+
+  if (results.length === 0) {
+    lines.push("", "Nenhum item foi concluido nesta rodada.");
+  }
+
+  return {
+    label,
+    startedAt,
+    finishedAt,
+    summaryText,
+    fileName: buildReportFileName(label, finishedAt),
+    text: `${lines.join("\n")}\n`
+  };
+}
+
+function setReportButtonsDisabled(disabled) {
+  if (copyReportButton) {
+    copyReportButton.disabled = disabled;
+  }
+
+  if (downloadReportButton) {
+    downloadReportButton.disabled = disabled;
+  }
+}
+
+function renderReport(report) {
+  if (!reportOutput || !reportMeta) {
+    return;
+  }
+
+  currentReportText = report?.text || "";
+  currentReportFileName = report?.fileName || "";
+
+  if (!currentReportText) {
+    reportMeta.textContent =
+      "O fechamento da ultima rodada fica salvo aqui, mesmo quando a fila da tela reinicia.";
+    reportOutput.textContent = "Nenhum relatorio final disponivel ainda.";
+    setReportButtonsDisabled(true);
+    return;
+  }
+
+  reportMeta.textContent = `${report.label} finalizado em ${formatDateTime(report.finishedAt)}. ${report.summaryText}`;
+  reportOutput.textContent = currentReportText;
+  setReportButtonsDisabled(false);
+}
+
+function saveReport(report) {
+  renderReport(report);
+
+  try {
+    window.localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(report));
+  } catch (_error) {
+    // Se o navegador bloquear armazenamento local, o relatorio continua visivel na sessao atual.
+  }
+}
+
+function loadSavedReport() {
+  try {
+    const raw = window.localStorage.getItem(REPORT_STORAGE_KEY);
+
+    if (!raw) {
+      renderReport(null);
+      return;
+    }
+
+    const report = JSON.parse(raw);
+    renderReport(report);
+  } catch (_error) {
+    renderReport(null);
+  }
 }
 
 function renderSummary(results, label) {
@@ -353,6 +512,58 @@ async function selectDownloadsDir() {
   }
 }
 
+async function copyCurrentReport() {
+  if (!currentReportText) {
+    return;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(currentReportText);
+      summary.textContent = "Relatorio copiado.";
+      return;
+    }
+  } catch (_error) {
+    // Cai no fallback abaixo.
+  }
+
+  const helper = document.createElement("textarea");
+  helper.value = currentReportText;
+  helper.setAttribute("readonly", "");
+  helper.style.position = "fixed";
+  helper.style.top = "0";
+  helper.style.left = "-9999px";
+  helper.style.opacity = "0";
+  document.body.append(helper);
+  helper.select();
+
+  try {
+    document.execCommand("copy");
+    summary.textContent = "Relatorio copiado.";
+  } catch (_error) {
+    summary.textContent = "Nao foi possivel copiar o relatorio.";
+  } finally {
+    helper.remove();
+  }
+}
+
+function downloadCurrentReport() {
+  if (!currentReportText) {
+    return;
+  }
+
+  const blob = new Blob([currentReportText], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = currentReportFileName || "relatorio-consulta.txt";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  summary.textContent = "Relatorio preparado para download.";
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -362,6 +573,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  const startedAt = Date.now();
   setControlsDisabled(true);
   summary.textContent = "Processando chaves...";
   clearResults("Processando...", "Cada resultado sera exibido assim que a consulta dessa chave terminar.");
@@ -384,12 +596,30 @@ form.addEventListener("submit", async (event) => {
     }
 
     const state = await consumeResultStream(response, "Chaves processadas");
+    saveReport(
+      buildFinalReport({
+        label: "Chaves processadas",
+        results: state.results,
+        failedMessage: state.failedMessage,
+        startedAt,
+        finishedAt: Date.now()
+      })
+    );
 
     if (state.failedMessage && state.results.length === 0) {
       clearResults("Falha na consulta", "Revise os dados enviados e tente novamente.");
     }
   } catch (error) {
     summary.textContent = error.message || "Erro ao processar as chaves.";
+    saveReport(
+      buildFinalReport({
+        label: "Chaves processadas",
+        results: [],
+        failedMessage: error.message || "Erro ao processar as chaves.",
+        startedAt,
+        finishedAt: Date.now()
+      })
+    );
     clearResults("Falha na consulta", "Revise os dados enviados e tente novamente.");
   } finally {
     setControlsDisabled(false);
@@ -403,6 +633,7 @@ async function processPdfFiles() {
     return;
   }
 
+  const startedAt = Date.now();
   setControlsDisabled(true);
   summary.textContent = "Lendo PDFs e consultando XMLs...";
   clearResults(
@@ -428,12 +659,30 @@ async function processPdfFiles() {
     }
 
     const state = await consumeResultStream(response, "Resultados PDF");
+    saveReport(
+      buildFinalReport({
+        label: "Resultados PDF",
+        results: state.results,
+        failedMessage: state.failedMessage,
+        startedAt,
+        finishedAt: Date.now()
+      })
+    );
 
     if (state.failedMessage && state.results.length === 0) {
       clearResults("Falha na leitura", "Nao foi possivel concluir a extracao dos PDFs enviados.");
     }
   } catch (error) {
     summary.textContent = error.message || "Erro ao processar os PDFs.";
+    saveReport(
+      buildFinalReport({
+        label: "Resultados PDF",
+        results: [],
+        failedMessage: error.message || "Erro ao processar os PDFs.",
+        startedAt,
+        finishedAt: Date.now()
+      })
+    );
     clearResults("Falha na leitura", "Nao foi possivel concluir a extracao dos PDFs enviados.");
   } finally {
     setControlsDisabled(false);
@@ -442,6 +691,13 @@ async function processPdfFiles() {
 
 pdfSubmitButton.addEventListener("click", processPdfFiles);
 pdfFilesField.addEventListener("change", updateFileSummary);
+if (copyReportButton) {
+  copyReportButton.addEventListener("click", copyCurrentReport);
+}
+
+if (downloadReportButton) {
+  downloadReportButton.addEventListener("click", downloadCurrentReport);
+}
 
 if (downloadsDirField) {
   downloadsDirField.addEventListener("click", selectDownloadsDir);
@@ -456,3 +712,4 @@ if (downloadsDirField) {
 clearResults();
 updateFileSummary();
 loadConfig();
+loadSavedReport();

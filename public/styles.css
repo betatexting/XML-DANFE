@@ -201,6 +201,7 @@ body::before {
 
 .input-panel,
 .results-panel,
+.report-panel,
 .utility-panel {
   z-index: 1;
   background:
@@ -598,6 +599,43 @@ button:disabled {
   gap: 14px;
 }
 
+.report-panel {
+  padding: 24px 28px 28px;
+}
+
+.report-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.report-actions button,
+.report-actions .secondary-button {
+  width: auto;
+}
+
+.frame-report {
+  min-height: 260px;
+  padding: 20px;
+}
+
+.report-output {
+  margin: 0;
+  min-height: 216px;
+  color: #f3f7f8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 500 0.96rem/1.7 "DM Sans", "Space Grotesk", sans-serif;
+}
+
 .save-path {
   padding: 16px 18px;
   border: 1px solid rgba(255, 40, 95, 0.42);
@@ -692,6 +730,10 @@ button:focus-visible,
     grid-template-columns: 1fr;
   }
 
+  .report-head {
+    grid-template-columns: 1fr;
+  }
+
   .summary {
     max-width: none;
     text-align: left;
@@ -723,6 +765,7 @@ button:focus-visible,
   .hero-band,
   .input-panel,
   .results-panel,
+  .report-panel,
   .utility-panel {
     padding: 20px;
   }
@@ -734,6 +777,16 @@ button:focus-visible,
 
   button,
   .secondary-button {
+    width: 100%;
+  }
+
+  .report-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .report-actions button,
+  .report-actions .secondary-button {
     width: 100%;
   }
 
