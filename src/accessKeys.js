@@ -30,6 +30,32 @@ function extractAccessKeys(rawValue) {
   return [...new Set([...exactMatches, ...tolerantMatches])];
 }
 
+function getIssueMonthFromAccessKey(key) {
+  const normalizedKey = sanitizeAccessKeyCandidate(key);
+  if (normalizedKey.length !== ACCESS_KEY_LENGTH) {
+    return "";
+  }
+
+  const year = Number.parseInt(normalizedKey.slice(2, 4), 10);
+  const month = Number.parseInt(normalizedKey.slice(4, 6), 10);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return "";
+  }
+
+  return `${2000 + year}-${String(month).padStart(2, "0")}`;
+}
+
+function getIssueDateFromXml(xml) {
+  const value = String(xml || "");
+  const match = value.match(
+    /<(?:\w+:)?(?:dhEmi|dEmi)\b[^>]*>\s*(\d{4}-\d{2}-\d{2}(?:T[^<\s]+)?)\s*<\/(?:\w+:)?(?:dhEmi|dEmi)>/i
+  );
+
+  return match?.[1] || "";
+}
+
 module.exports = {
-  extractAccessKeys
+  extractAccessKeys,
+  getIssueDateFromXml,
+  getIssueMonthFromAccessKey
 };

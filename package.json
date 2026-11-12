@@ -1,17 +1,55 @@
 {
   "name": "consulta-danfe-automacao",
   "version": "0.1.0",
-  "description": "Interface simples para consultar chaves DANFE e baixar arquivos via Playwright.",
-  "main": "server.js",
+  "description": "Aplicacao desktop para consultar XMLs DANFE com API direta e fallback opcional.",
+  "author": "Contas Contabilidade",
+  "main": "src/electron-main.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "playwright:install": "node scripts/install-playwright.js"
+    "start": "electron .",
+    "dev": "electron .",
+    "build:exe": "node scripts/build-exe.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "build": {
+    "appId": "com.contas.consultadanfe",
+    "productName": "Consulta DANFE",
+    "asar": true,
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "public/**/*",
+      "src/**/*",
+      "server.js",
+      "package.json",
+      "!tests/**/*",
+      "!dist/**/*",
+      "!dist-electron/**/*",
+      "!release/**/*",
+      "!tmp-*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "express": "^4.21.2",
     "multer": "^2.0.2",
     "pdf-parse": "^1.1.1",
-    "playwright": "^1.54.1"
+    "playwright-core": "^1.62.1",
+    "sax": "1.6.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
   }
 }

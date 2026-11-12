@@ -1,4 +1,8 @@
 node_modules/
+dist-electron/
+.electron-builder-cache/
+.electron-cache/
+.localappdata/
 .npm-cache/
 downloads/
 playwright-report/
@@ -8,3 +12,28 @@ test-results/
 .playwright-browsers/
 debug.log
 tmp-*
+
+# Build outputs and temporary development files
+dist/
+build/
+.appdata/
+.app-data/
+.cache/
+.pkg-cache/
+.update-status.json
+coverage/
+*.log
+*.tmp
+*.temp
+*.exe
+*.zip
+*.pdb
+*.ilk
+.DS_Store
+Thumbs.db
+
+# Local settings and credentials
+.env.*
+!.env.example
+*.pfx
+*.p12

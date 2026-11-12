@@ -1,22 +1,26 @@
-const path = require("path");
-const fs = require("fs/promises");
-process.env.PLAYWRIGHT_BROWSERS_PATH =
-  process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(__dirname, "..", ".playwright-browsers");
-const { chromium } = require("playwright");
-const selectors = require("./selectors");
+const { saveOrganizedXml } = require("./xmlStorage");
+const { getIssueDateFromXml } = require("./accessKeys");
+const {
+  DEFAULT_RETRY_DELAY_MS,
+  LOOKUP_MODE_HTTP_DIRECT,
+  LookupError,
+  WINDOW_EXPIRED_ERROR_CODE,
+  createLookupErrorResult,
+  createLookupSuccessResult
+} = require("./lookupResult");
 
-const LOOKUP_TIMEOUT_MS = 45000;
-const AFTER_PAGE_READY_DELAY_MS = 1500;
-const AFTER_TYPING_DELAY_MS = 1000;
-const TYPING_DELAY_MS = 45;
-const MAX_ATTEMPTS_PER_KEY = 3;
-const RETRY_DELAY_MS = 4000;
-const BETWEEN_KEYS_DELAY_MS = 2500;
-const DEFAULT_VIEWPORT = {
-  width: 1365,
-  height: 900
-};
-const DEFAULT_LANGUAGES = ["pt-BR", "pt", "en-US", "en"];
+const LOOKUP_URL =
+  process.env.CONSULTA_DANFE_API_URL || "https://consultadanfe.com/api/v1/consulta";
+const LOOKUP_TIMEOUT_MS = Number.parseInt(process.env.CONSULTA_DANFE_TIMEOUT_MS, 10) || 18000;
+const MAX_ATTEMPTS_PER_KEY = Math.max(
+  1,
+  Number.parseInt(process.env.CONSULTA_DANFE_MAX_ATTEMPTS, 10) || 2
+);
+const DEFAULT_CONCURRENT_LOOKUPS =
+  Math.max(1, Number.parseInt(process.env.CONSULTA_DANFE_CONCURRENCY, 10) || 3);
+const RETRYABLE_STATUS_CODES = new Set([202, 408, 425, 429, 500, 502, 503, 504]);
+const PENDING_ERROR_CODE = "pendente";
+const MAX_RETRY_DELAY_MS = Number.parseInt(process.env.CONSULTA_DANFE_MAX_RETRY_DELAY_MS, 10) || 3000;
 
 function delay(ms) {
   return new Promise((resolve) => {
@@ -24,301 +28,366 @@ function delay(ms) {
   });
 }
 
-function ensureSelector(name, value) {
-  if (!value || typeof value !== "string" || !value.trim()) {
-    throw new Error(
-      `Selector ausente em src/selectors.js: preencha "${name}" antes de rodar a automacao.`
+function decodeBase64Text(value) {
+  return Buffer.from(value, "base64").toString("utf8").trim();
+}
+
+function extractXmlFromApiPayload(payload) {
+  const directXmlCandidates = [payload?.xml, payload?.codigo_xml];
+
+  for (const candidate of directXmlCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (typeof payload?.xml_base64 === "string" && payload.xml_base64.trim()) {
+    return decodeBase64Text(payload.xml_base64);
+  }
+
+  return "";
+}
+
+function readApiMessage(payload, fallback) {
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+
+  if (typeof payload?.error_description === "string" && payload.error_description.trim()) {
+    return payload.error_description.trim();
+  }
+
+  if (typeof payload?.error === "string" && payload.error.trim()) {
+    return payload.error.trim();
+  }
+
+  return fallback;
+}
+
+function readApiErrorCode(payload, response) {
+  const payloadCode = typeof payload?.error === "string" ? payload.error.trim() : "";
+  const headerCode = response.headers.get("x-error-code");
+
+  if (payloadCode) {
+    return payloadCode;
+  }
+
+  if (typeof headerCode === "string" && headerCode.trim()) {
+    return headerCode.trim();
+  }
+
+  return "";
+}
+
+function isFallbackEligibleErrorCode(errorCode) {
+  return errorCode === WINDOW_EXPIRED_ERROR_CODE;
+}
+
+function buildApiErrorMessage({ payload, response, errorCode, fallback }) {
+  if (errorCode === WINDOW_EXPIRED_ERROR_CODE) {
+    return [
+      "A chave esta fora da janela da API publica atual.",
+      "Ela pode ser reenviada pelo fallback automatico do site ao final da rodada."
+    ].join(" ");
+  }
+
+  if (errorCode === PENDING_ERROR_CODE) {
+    return readApiMessage(
+      payload,
+      "A API ainda esta preparando essa consulta. O app vai tentar novamente em instantes."
     );
   }
+
+  return readApiMessage(payload, fallback);
 }
 
-class LookupError extends Error {
-  constructor(message, { retryable = false } = {}) {
-    super(message);
-    this.name = "LookupError";
-    this.retryable = retryable;
-  }
-}
-
-function getLaunchCandidates(headless) {
-  const baseLaunchOptions = {
-    headless,
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage",
-      "--lang=pt-BR",
-      `--window-size=${DEFAULT_VIEWPORT.width},${DEFAULT_VIEWPORT.height}`
-    ]
-  };
-
-  const candidates = [
-    {
-      name: "chrome",
-      options: {
-        ...baseLaunchOptions,
-        channel: "chrome"
-      }
-    }
-  ];
-
-  if (headless) {
-    candidates.push({
-      name: "chromium",
-      options: {
-        ...baseLaunchOptions,
-        // Usa o "new headless" do Chromium antes de cair no shell legado.
-        channel: "chromium"
-      }
-    });
+function parseRetryAfterMs(response) {
+  const retryAfter = response.headers.get("retry-after");
+  if (!retryAfter) {
+    return DEFAULT_RETRY_DELAY_MS;
   }
 
-  candidates.push({
-    name: "playwright-default",
-    options: baseLaunchOptions
-  });
-
-  return candidates;
-}
-
-function buildUserAgent(browser) {
-  const rawVersion = typeof browser.version === "function" ? browser.version() : "";
-  const normalizedVersion = /^\d+(\.\d+){0,3}$/.test(rawVersion) ? rawVersion : "138.0.0.0";
-
-  return [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "AppleWebKit/537.36 (KHTML, like Gecko)",
-    `Chrome/${normalizedVersion} Safari/537.36`
-  ].join(" ");
-}
-
-async function launchBrowser(headless) {
-  const failures = [];
-
-  for (const candidate of getLaunchCandidates(headless)) {
-    try {
-      const browser = await chromium.launch(candidate.options);
-      const launchInfo = {
-        channel: candidate.name,
-        headless
-      };
-
-      console.log(
-        `[playwright] Navegador iniciado com canal=${launchInfo.channel} headless=${launchInfo.headless}`
-      );
-
-      return {
-        browser,
-        launchInfo
-      };
-    } catch (error) {
-      const message = error?.message || "erro desconhecido";
-      failures.push(`${candidate.name}: ${message}`);
-      console.warn(
-        `[playwright] Falha ao iniciar com canal=${candidate.name} headless=${headless}: ${message}`
-      );
-    }
+  const seconds = Number.parseInt(retryAfter, 10);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(Math.max(seconds * 1000, DEFAULT_RETRY_DELAY_MS), MAX_RETRY_DELAY_MS);
   }
 
-  throw new Error(
-    `Falha ao iniciar o navegador para a automacao. Tentativas: ${failures.join(" | ")}`
-  );
+  const dateValue = Date.parse(retryAfter);
+  if (Number.isFinite(dateValue)) {
+    return Math.min(
+      Math.max(dateValue - Date.now(), DEFAULT_RETRY_DELAY_MS),
+      MAX_RETRY_DELAY_MS
+    );
+  }
+
+  return DEFAULT_RETRY_DELAY_MS;
 }
 
-async function createBrowserContext(browser) {
-  const context = await browser.newContext({
-    acceptDownloads: true,
-    locale: "pt-BR",
-    timezoneId: "America/Sao_Paulo",
-    viewport: DEFAULT_VIEWPORT,
-    screen: DEFAULT_VIEWPORT,
-    userAgent: buildUserAgent(browser),
-    extraHTTPHeaders: {
-      "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
-  });
-
-  await context.addInitScript((languages) => {
-    Object.defineProperty(navigator, "webdriver", {
-      get: () => undefined
-    });
-
-    Object.defineProperty(navigator, "languages", {
-      get: () => languages
-    });
-
-    Object.defineProperty(navigator, "plugins", {
-      get: () => [1, 2, 3, 4, 5]
-    });
-
-    window.chrome = window.chrome || {
-      runtime: {}
-    };
-  }, DEFAULT_LANGUAGES);
-
-  return context;
-}
-
-async function createLookupSession(browser) {
-  const context = await createBrowserContext(browser);
-  const page = await context.newPage();
-
-  page.setDefaultTimeout(LOOKUP_TIMEOUT_MS);
-  page.setDefaultNavigationTimeout(LOOKUP_TIMEOUT_MS);
-
-  return {
-    context,
-    page
-  };
-}
-
-async function openLookupPage(page) {
-  await page.goto(selectors.siteUrl, {
-    waitUntil: "domcontentloaded",
-    timeout: LOOKUP_TIMEOUT_MS
-  });
-  await page.locator(selectors.accessKeyInput).waitFor({
-    state: "visible",
-    timeout: LOOKUP_TIMEOUT_MS
-  });
-  await page.waitForTimeout(AFTER_PAGE_READY_DELAY_MS);
-}
-
-async function typeAccessKey(page, key) {
-  const input = page.locator(selectors.accessKeyInput);
-
-  await input.click();
-  await input.press("ControlOrMeta+A");
-  await input.press("Delete");
-  await input.pressSequentially(key, { delay: TYPING_DELAY_MS });
-  await page.waitForTimeout(AFTER_TYPING_DELAY_MS);
-}
-
-async function requestXmlForKey(page) {
-  const lookupResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/chave") && response.request().method().toUpperCase() === "POST",
-    {
-      timeout: LOOKUP_TIMEOUT_MS
-    }
-  );
-
-  await page.getByRole("button", { name: /imprimir danfe/i }).click();
-  const lookupResponse = await lookupResponsePromise;
-
-  let payload = null;
+async function readJsonSafely(response) {
   try {
-    payload = await lookupResponse.json();
+    return await response.json();
   } catch (_error) {
-    payload = null;
+    return null;
   }
+}
 
-  const xml = typeof payload?.codigo_xml === "string" ? payload.codigo_xml.trim() : "";
-  if (lookupResponse.ok() && payload?.status === "sucesso" && xml) {
-    return xml;
-  }
-
-  const message =
-    typeof payload?.message === "string" && payload.message.trim()
-      ? payload.message.trim()
-      : `O site retornou ${lookupResponse.status()} ao consultar a chave.`;
-
-  throw new LookupError(message, {
-    // O consultadanfe esta respondendo 404 intermitente para chaves validas.
-    retryable: lookupResponse.status() === 404 || lookupResponse.status() >= 500
+function createLookupError(message, options = {}) {
+  return new LookupError(message, {
+    ...options,
+    lookupMode: LOOKUP_MODE_HTTP_DIRECT
   });
 }
 
-async function saveXmlForKey(xml, key, downloadsDir) {
-  const targetFile = path.join(downloadsDir, `${key}.xml`);
-  await fs.writeFile(targetFile, `${xml}\n`, "utf8");
+function decorateLookupAttempt(error, attemptCount) {
+  if (error instanceof LookupError) {
+    error.attemptCount = attemptCount;
+    error.lookupMode = LOOKUP_MODE_HTTP_DIRECT;
+    return error;
+  }
+
+  return createLookupError(error?.message || "Falha ao consultar a chave no Consulta DANFE.", {
+    retryable: true,
+    attemptCount
+  });
+}
+
+function isPendingPayload(payload, response) {
+  const normalizedStatus = String(payload?.status || "")
+    .trim()
+    .toLowerCase();
+
+  return response.status === 202 || normalizedStatus === "pendente";
+}
+
+async function requestXmlForKey(key) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, LOOKUP_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(LOOKUP_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "consulta-danfe-automacao/0.1.0"
+      },
+      body: JSON.stringify({
+        chave: key,
+        format: "json"
+      }),
+      signal: controller.signal
+    });
+    const payload = await readJsonSafely(response);
+    const errorCode = readApiErrorCode(payload, response);
+
+    if (!response.ok) {
+      throw createLookupError(
+        buildApiErrorMessage({
+          payload,
+          response,
+          errorCode,
+          fallback: `A API retornou ${response.status} ao consultar a chave.`
+        }),
+        {
+          retryable: RETRYABLE_STATUS_CODES.has(response.status),
+          retryAfterMs: parseRetryAfterMs(response),
+          errorCode,
+          httpStatus: response.status,
+          fallbackEligible: isFallbackEligibleErrorCode(errorCode)
+        }
+      );
+    }
+
+    if (isPendingPayload(payload, response)) {
+      throw createLookupError(
+        buildApiErrorMessage({
+          payload,
+          response,
+          errorCode: errorCode || PENDING_ERROR_CODE,
+          fallback: "A API ainda nao liberou o XML dessa chave."
+        }),
+        {
+          retryable: true,
+          retryAfterMs: parseRetryAfterMs(response),
+          errorCode: errorCode || PENDING_ERROR_CODE,
+          httpStatus: response.status
+        }
+      );
+    }
+
+    const xml = extractXmlFromApiPayload(payload);
+    if (!xml) {
+      throw createLookupError(
+        buildApiErrorMessage({
+          payload,
+          response,
+          errorCode,
+          fallback: "A resposta da API nao trouxe o XML esperado."
+        }),
+        {
+          retryable: false,
+          errorCode,
+          httpStatus: response.status,
+          fallbackEligible: isFallbackEligibleErrorCode(errorCode)
+        }
+      );
+    }
+
+    return xml;
+  } catch (error) {
+    if (error instanceof LookupError) {
+      throw error;
+    }
+
+    if (error?.name === "AbortError") {
+      throw createLookupError("Tempo limite excedido ao consultar a chave no Consulta DANFE.", {
+        retryable: true
+      });
+    }
+
+    throw createLookupError(error?.message || "Falha ao consultar a chave no Consulta DANFE.", {
+      retryable: true
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function saveXmlForKey(xml, key, downloadsDir, attemptCount, organization) {
+  const targetFile = await saveOrganizedXml(xml, key, downloadsDir, organization);
 
   return {
-    key,
-    status: "success",
-    fileName: path.basename(targetFile),
-    filePath: targetFile
+    ...createLookupSuccessResult({
+      key,
+      targetFile,
+      lookupMode: LOOKUP_MODE_HTTP_DIRECT,
+      attemptCount
+    }),
+    documentIssueDate: getIssueDateFromXml(xml)
   };
 }
 
-async function downloadForKey(page, key, downloadsDir) {
-  ensureSelector("accessKeyInput", selectors.accessKeyInput);
-
+async function downloadForKey(key, downloadsDir, onProgress, organization) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_KEY; attempt += 1) {
     try {
-      await openLookupPage(page);
-      await typeAccessKey(page, key);
-      const xml = await requestXmlForKey(page);
-      return await saveXmlForKey(xml, key, downloadsDir);
-    } catch (error) {
-      lastError = error;
+      if (typeof onProgress === "function") {
+        await onProgress({
+          type: "attempt",
+          key,
+          attempt,
+          maxAttempts: MAX_ATTEMPTS_PER_KEY,
+          lookupMode: LOOKUP_MODE_HTTP_DIRECT
+        });
+      }
 
-      if (!(error instanceof LookupError) || !error.retryable || attempt === MAX_ATTEMPTS_PER_KEY) {
+      const xml = await requestXmlForKey(key);
+      return await saveXmlForKey(xml, key, downloadsDir, attempt, organization);
+    } catch (error) {
+      lastError = decorateLookupAttempt(error, attempt);
+
+      if (!lastError.retryable || attempt === MAX_ATTEMPTS_PER_KEY) {
         break;
       }
 
-      await page.waitForTimeout(RETRY_DELAY_MS * attempt);
-    }
-  }
+      const retryDelayMs = Math.min(
+        Math.max(lastError.retryAfterMs || DEFAULT_RETRY_DELAY_MS, DEFAULT_RETRY_DELAY_MS),
+        MAX_RETRY_DELAY_MS
+      );
 
-  if (lastError instanceof LookupError) {
-    throw new Error(
-      `Falha apos ${MAX_ATTEMPTS_PER_KEY} tentativas. ${lastError.message}`
-    );
+      if (typeof onProgress === "function") {
+        await onProgress({
+          type: "retry-wait",
+          key,
+          attempt,
+          maxAttempts: MAX_ATTEMPTS_PER_KEY,
+          retryDelayMs,
+          message: lastError.message,
+          lookupMode: LOOKUP_MODE_HTTP_DIRECT
+        });
+      }
+
+      await delay(retryDelayMs);
+    }
   }
 
   throw lastError;
 }
 
-async function processAccessKeys({ keys, headless, downloadsDir, onResult }) {
-  const { browser, launchInfo } = await launchBrowser(headless);
-  const results = [];
+async function processAccessKeys({
+  keys,
+  downloadsDir,
+  organization,
+  onResult,
+  onProgress,
+  concurrency = DEFAULT_CONCURRENT_LOOKUPS
+}) {
+  const results = new Array(keys.length);
+  const total = keys.length;
+  const activeConcurrency = Math.min(Math.max(1, concurrency), Math.max(1, total));
+  let nextIndex = 0;
+  let completedCount = 0;
 
   console.log(
-    `[playwright] Processando ${keys.length} chave(s) com canal=${launchInfo.channel} headless=${launchInfo.headless}`
+    `[consulta-http] Processando ${total} chave(s) pela API direta com concorrencia=${activeConcurrency}.`
   );
 
-  try {
-    for (const [index, key] of keys.entries()) {
-      let result = null;
-      let session = null;
+  async function processOne(index) {
+    const key = keys[index];
 
-      try {
-        session = await createLookupSession(browser);
-        result = await downloadForKey(session.page, key, downloadsDir);
-      } catch (error) {
-        result = {
-          key,
-          status: "error",
-          message: error.message || "Falha ao baixar o arquivo."
-        };
-      } finally {
-        if (session) {
-          await session.context.close();
+    try {
+      return await downloadForKey(key, downloadsDir, async (progress) => {
+        if (typeof onProgress === "function") {
+          await onProgress(progress, {
+            sourceIndex: index,
+            total
+          });
         }
-      }
+      }, organization);
+    } catch (error) {
+      return createLookupErrorResult({
+        key,
+        error,
+        lookupMode: LOOKUP_MODE_HTTP_DIRECT
+      });
+    }
+  }
 
-      results.push(result);
+  async function worker() {
+    while (nextIndex < total) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      const result = await processOne(currentIndex);
+      results[currentIndex] = result;
+      completedCount += 1;
 
       if (typeof onResult === "function") {
         await onResult(result, {
-          index,
-          total: keys.length
+          index: completedCount - 1,
+          sourceIndex: currentIndex,
+          completed: completedCount,
+          total
         });
       }
-
-      if (index < keys.length - 1) {
-        await delay(BETWEEN_KEYS_DELAY_MS);
-      }
     }
-
-    return results;
-  } finally {
-    await browser.close();
   }
+
+  await Promise.all(Array.from({ length: activeConcurrency }, () => worker()));
+  return results;
 }
 
 module.exports = {
-  processAccessKeys
+  DEFAULT_CONCURRENT_LOOKUPS,
+  LOOKUP_MODE_HTTP_DIRECT,
+  LookupError,
+  PENDING_ERROR_CODE,
+  WINDOW_EXPIRED_ERROR_CODE,
+  decodeBase64Text,
+  extractXmlFromApiPayload,
+  processAccessKeys,
+  requestXmlForKey
 };

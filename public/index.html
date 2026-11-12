@@ -13,6 +13,42 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <header class="desktop-titlebar" aria-label="Barra da janela">
+      <div class="desktop-titlebar__drag">
+        <div class="desktop-titlebar__brand">
+          <span class="desktop-titlebar__dot" aria-hidden="true"></span>
+          <span class="desktop-titlebar__name">Consulta DANFE</span>
+        </div>
+      </div>
+
+      <div class="desktop-titlebar__actions">
+        <button
+          id="windowMinimizeButton"
+          type="button"
+          class="window-control-button"
+          aria-label="Minimizar janela"
+        >
+          -
+        </button>
+        <button
+          id="windowMaximizeButton"
+          type="button"
+          class="window-control-button"
+          aria-label="Maximizar janela"
+        >
+          []
+        </button>
+        <button
+          id="windowCloseButton"
+          type="button"
+          class="window-control-button is-close"
+          aria-label="Fechar janela"
+        >
+          x
+        </button>
+      </div>
+    </header>
+
     <main class="app-shell">
       <section class="panel hero-band">
         <div class="hero-meta">
@@ -21,13 +57,11 @@
             <h1>consultor <span>xml</span></h1>
           </div>
           <p class="description">
-            Cole chaves, trechos de XML ou anexe PDFs da DANFE para localizar a chave e baixar
-            os XMLs em um painel unico.
+            Cole chaves, trechos de XML ou anexe PDFs e planilhas para localizar a chave e
+            baixar os XMLs em um painel unico.
           </p>
         </div>
-        <div class="hero-chips" aria-label="Recursos ativos">
-
-        </div>
+        <div class="hero-chips" aria-label="Recursos ativos"></div>
       </section>
 
       <section class="workspace">
@@ -51,32 +85,107 @@
               ></textarea>
             </div>
 
+            <fieldset class="certificate-mode" aria-describedby="certificateModeHelp">
+              <legend class="field-label">Modo da busca</legend>
+              <div class="certificate-mode__switch-row">
+                <span>Sem certificado</span>
+                <label class="mode-switch" for="certificateMode">
+                  <input
+                    id="certificateMode"
+                    name="certificateMode"
+                    type="checkbox"
+                    role="switch"
+                    aria-describedby="certificateModeHelp certificateSelectionSummary"
+                  />
+                  <span class="mode-switch__track" aria-hidden="true"></span>
+                  <span class="visually-hidden">Usar certificado digital</span>
+                </label>
+                <span>Com certificado</span>
+              </div>
+              <p id="certificateModeHelp" class="certificate-mode__help">
+                Sem certificado, a consulta usa a API atual e pode retornar documentos incompletos.
+              </p>
+              <p id="certificateSelectionSummary" class="certificate-mode__selection" aria-live="polite">
+                Nenhum certificado selecionado.
+              </p>
+            </fieldset>
+
             <div class="action-row">
               <button id="submitButton" type="submit" class="primary-button">Processar</button>
-              <label class="secondary-button upload-trigger" for="pdfFiles">Anexar PDFs</label>
             </div>
           </form>
 
-          <div class="support-grid">
-            <article class="info-card">
-              <p class="info-card-label">Arquivos anexados</p>
-              <p class="info-card-note">
-                PDFs escaneados como imagem podem precisar de OCR antes da extracao.
-              </p>
+          <section class="topic-dock" aria-label="Assuntos do app">
+            <article class="topic-card" tabindex="0">
+              <div class="topic-card__head">
+                <div>
+                  <p class="topic-card__eyebrow">arquivos</p>
+                  <p class="topic-card__title">PDFs</p>
+                </div>
+                <span id="pdfTopicStatus" class="topic-card__status">0</span>
+              </div>
+
+              <div class="topic-card__body">
+                <p class="topic-card__copy">
+                  PDFs escaneados como imagem podem precisar de OCR antes da extracao.
+                </p>
+                <p id="pdfFileSummary" class="topic-card__detail">Nenhum PDF selecionado.</p>
+                <div class="topic-card__actions">
+                  <label class="secondary-button upload-trigger" for="pdfFiles">Selecionar PDFs</label>
+                  <button id="pdfSubmitButton" type="button" class="ghost-button" disabled>
+                    Processar PDFs
+                  </button>
+                </div>
+              </div>
             </article>
 
-            <article class="info-card">
-              <p class="info-card-label">Execução</p>
-              <label class="toggle" for="headless">
-                <input id="headless" name="headless" type="checkbox" />
-                <span class="toggle-indicator" aria-hidden="true"></span>
-                <span class="toggle-copy">oculto</span>
-              </label>
-              <button id="pdfSubmitButton" type="button" class="ghost-button" disabled>
-                Processar PDFs
-              </button>
+            <article class="topic-card" tabindex="0">
+              <div class="topic-card__head">
+                <div>
+                  <p class="topic-card__eyebrow">planilhas</p>
+                  <p class="topic-card__title">Chaves em lote</p>
+                </div>
+                <span id="spreadsheetTopicStatus" class="topic-card__status">0</span>
+              </div>
+
+              <div class="topic-card__body">
+                <p class="topic-card__copy">
+                  O app le a primeira linha e procura a coluna com cabecalho Chave de Acesso em
+                  CSV, XLSX, XLSM ou XLS.
+                </p>
+                <p id="spreadsheetFileSummary" class="topic-card__detail">
+                  Nenhuma planilha selecionada.
+                </p>
+                <div class="topic-card__actions">
+                  <label class="secondary-button upload-trigger" for="spreadsheetFiles">
+                    Selecionar planilhas
+                  </label>
+                  <button id="spreadsheetSubmitButton" type="button" class="ghost-button" disabled>
+                    Processar planilhas
+                  </button>
+                </div>
+              </div>
             </article>
-          </div>
+
+            <article class="topic-card" tabindex="0">
+              <div class="topic-card__head">
+                <div>
+                  <p class="topic-card__eyebrow">motor</p>
+                  <p class="topic-card__title">Consulta direta</p>
+                </div>
+                <span class="topic-card__status">HTTP</span>
+              </div>
+
+              <div class="topic-card__body">
+                <p id="lookupModeSummary" class="topic-card__copy">
+                  As consultas saem direto pela API e podem pedir fallback oculto no site.
+                </p>
+                <p id="lookupPerformanceSummary" class="topic-card__detail">
+                  Preparando informacoes do motor.
+                </p>
+              </div>
+            </article>
+          </section>
 
           <input
             id="pdfFiles"
@@ -86,13 +195,20 @@
             multiple
             class="visually-hidden"
           />
+          <input
+            id="spreadsheetFiles"
+            name="spreadsheetFiles"
+            type="file"
+            accept=".csv,.xlsx,.xlsm,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel"
+            multiple
+            class="visually-hidden"
+          />
         </section>
 
         <section class="panel results-panel">
           <div class="section-head section-head-results">
             <div>
               <p class="section-label">Processadas</p>
-            
             </div>
             <p id="summary" class="summary">Nenhum processamento iniciado.</p>
           </div>
@@ -122,7 +238,7 @@
             Carregando destino...
           </div>
           <p class="utility-copy">
-            Os XMLs baixados continuam organizados nessa pasta local configurada no servidor.
+            Sem certificado, escolha a classificacao no popup. Com certificado, o CNPJ dele e os dados do XML organizam automaticamente em CNPJ / AAAA-MM / entradas ou saidas.
           </p>
         </article>
 
@@ -136,6 +252,17 @@
             <div class="flow-item">
               <strong>PDFs</strong>
               <span>Selecione um ou mais arquivos e dispare a extracao pelo painel lateral.</span>
+            </div>
+            <div class="flow-item">
+              <strong>Planilhas</strong>
+              <span>O sistema le a primeira linha e procura a coluna Chave de Acesso.</span>
+            </div>
+            <div class="flow-item">
+              <strong>Fallback automatico</strong>
+              <span>
+                Quando uma chave valida terminar com falha, o app oferece uma nova
+                tentativa pelo site. Com certificado, essa etapa e automatica.
+              </span>
             </div>
           </div>
         </article>
@@ -164,6 +291,138 @@
           <pre id="reportOutput" class="report-output">Nenhum relatorio final disponivel ainda.</pre>
         </div>
       </section>
+
+      <dialog id="organizationDialog" class="certificate-dialog" aria-labelledby="organizationDialogTitle">
+        <form id="organizationForm" class="certificate-dialog__panel">
+          <p class="section-label">Organizar arquivos</p>
+          <h2 id="organizationDialogTitle" class="fallback-dialog__title">Como classificar estas notas?</h2>
+          <label class="field-label" for="organizationType">Tipo de notas</label>
+          <select id="organizationType">
+            <option value="entradas">Entradas</option>
+            <option value="saidas">Saidas</option>
+            <option value="auto">Identificar entradas e saidas pelo CNPJ</option>
+          </select>
+          <label class="field-label" for="organizationCnpj">CNPJ da empresa</label>
+          <input id="organizationCnpj" type="text" inputmode="numeric" maxlength="18" placeholder="00.000.000/0000-00" autocomplete="off" />
+          <p id="organizationHelp" class="utility-copy"></p>
+          <p id="organizationMessage" class="certificate-dialog__message" aria-live="polite"></p>
+          <div class="fallback-dialog__actions">
+            <button id="organizationCancel" type="button" class="ghost-button">Cancelar</button>
+            <button type="submit" class="primary-button">Confirmar e processar</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="certificateDialog" class="certificate-dialog" aria-labelledby="certificateDialogTitle">
+        <form id="certificateForm" class="certificate-dialog__panel" novalidate>
+          <p class="section-label">Busca com certificado</p>
+          <h2 id="certificateDialogTitle" class="fallback-dialog__title">Selecionar certificado digital</h2>
+
+          <div class="certificate-file-picker">
+            <button id="selectCertificateButton" type="button" class="secondary-button">
+              Selecionar certificado
+            </button>
+            <p id="certificateFileName" class="certificate-file-picker__name">
+              Nenhum certificado selecionado.
+            </p>
+          </div>
+          <input
+            id="certificateFileInput"
+            type="file"
+            accept=".pfx,.p12,application/x-pkcs12"
+            class="visually-hidden"
+          />
+
+          <label class="field-label" for="certificatePassword">Senha do certificado</label>
+          <input
+            id="certificatePassword"
+            name="certificatePassword"
+            type="password"
+            autocomplete="off"
+            maxlength="1024"
+          />
+
+          <label class="field-label" for="certificateAuthorUf">UF da empresa do certificado</label>
+          <select id="certificateAuthorUf" name="certificateAuthorUf">
+            <option value="">Selecione a UF</option>
+            <option value="11">RO — Rondônia</option>
+            <option value="12">AC — Acre</option>
+            <option value="13">AM — Amazonas</option>
+            <option value="14">RR — Roraima</option>
+            <option value="15">PA — Pará</option>
+            <option value="16">AP — Amapá</option>
+            <option value="17">TO — Tocantins</option>
+            <option value="21">MA — Maranhão</option>
+            <option value="22">PI — Piauí</option>
+            <option value="23">CE — Ceará</option>
+            <option value="24">RN — Rio Grande do Norte</option>
+            <option value="25">PB — Paraíba</option>
+            <option value="26">PE — Pernambuco</option>
+            <option value="27">AL — Alagoas</option>
+            <option value="28">SE — Sergipe</option>
+            <option value="29">BA — Bahia</option>
+            <option value="31">MG — Minas Gerais</option>
+            <option value="32">ES — Espírito Santo</option>
+            <option value="33">RJ — Rio de Janeiro</option>
+            <option value="35">SP — São Paulo</option>
+            <option value="41">PR — Paraná</option>
+            <option value="42">SC — Santa Catarina</option>
+            <option value="43">RS — Rio Grande do Sul</option>
+            <option value="50">MS — Mato Grosso do Sul</option>
+            <option value="51">MT — Mato Grosso</option>
+            <option value="52">GO — Goiás</option>
+            <option value="53">DF — Distrito Federal</option>
+          </select>
+
+          <p id="certificateDialogMessage" class="certificate-dialog__message" aria-live="polite"></p>
+          <div class="fallback-dialog__actions">
+            <button id="certificateCancelButton" type="button" class="ghost-button">Cancelar</button>
+            <button id="certificateConfirmButton" type="submit" class="primary-button">
+              Confirmar certificado
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog
+        id="certificateReportDialog"
+        class="certificate-report-dialog"
+        aria-labelledby="certificateReportDialogTitle"
+      >
+        <section class="certificate-dialog__panel">
+          <p class="section-label">Relatorio da busca</p>
+          <h2 id="certificateReportDialogTitle" class="fallback-dialog__title">
+            Resultado dos fallbacks
+          </h2>
+          <p id="certificateReportDialogCopy" class="utility-copy">
+            Preparando o fechamento da consulta.
+          </p>
+          <div id="certificateReportDialogSummary" class="certificate-report-dialog__summary"></div>
+          <div class="fallback-dialog__actions">
+            <button id="closeCertificateReportButton" type="button" class="ghost-button">Fechar</button>
+            <button id="downloadCertificateReportButton" type="button" class="secondary-button">
+              Baixar relatorio .xlsx
+            </button>
+          </div>
+        </section>
+      </dialog>
+
+      <dialog id="fallbackDialog" class="fallback-dialog">
+        <form method="dialog" class="fallback-dialog__panel">
+          <p class="section-label">Fallback automatico</p>
+          <h2 class="fallback-dialog__title">Tentar novamente as chaves com falha</h2>
+          <p id="fallbackDialogCopy" class="utility-copy">
+            As chaves abaixo terminaram com falha. Deseja tentar novamente pelo site?
+          </p>
+
+          <div id="fallbackDialogList" class="fallback-dialog__list" aria-live="polite"></div>
+
+          <div class="fallback-dialog__actions">
+            <button value="cancel" type="submit" class="ghost-button">Manter falhas</button>
+            <button value="confirm" type="submit" class="primary-button">Tentar fallback</button>
+          </div>
+        </form>
+      </dialog>
     </main>
 
     <script src="/app.js"></script>
