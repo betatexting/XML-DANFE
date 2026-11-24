@@ -22,6 +22,8 @@ build/
 .pkg-cache/
 .update-status.json
 coverage/
+__pycache__/
+*.pyc
 *.log
 *.tmp
 *.temp
