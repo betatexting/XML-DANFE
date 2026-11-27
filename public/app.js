@@ -160,6 +160,7 @@ function clearResults(
 }
 
 function setControlsDisabled(disabled) {
+  document.querySelector("#reorganizeXmlButton").disabled = disabled;
   submitButton.disabled = disabled;
   if (certificateMode) {
     certificateMode.disabled = disabled;
@@ -745,6 +746,7 @@ function renderReport(report) {
   }
 
   reportMeta.textContent = `${report.label} finalizado em ${formatDateTime(report.finishedAt)}. ${report.summaryText}`;
+  if (report.traceFilePath) reportMeta.textContent += ` Historico detalhado: ${report.traceFilePath}`;
   reportOutput.textContent = currentReportText;
   setReportButtonsDisabled(false);
 }
@@ -788,8 +790,13 @@ function buildResultIdentity(result) {
 function getFallbackEligibleResults(results) {
   return results.filter(
     (result) =>
-      result?.status === "error" &&
+      result?.status === "error" && result?.errorCode !== "xml_organization_failed" &&
       result?.lookupMode !== "site-fallback" &&
+      result?.lookupMode !== "input-validation" &&
+      result?.httpStatus !== 429 &&
+      result?.httpStatus !== 202 &&
+      !["chave_invalida", "dv_invalido", "tipo_nao_suportado"].includes(result?.errorCode) &&
+      result?.errorCode !== "api_cooldown" &&
       typeof result?.key === "string" &&
       /^\d{44}$/.test(result.key)
   );
@@ -798,7 +805,7 @@ function getFallbackEligibleResults(results) {
 function getFailedKeyResults(results) {
   return results.filter(
     (result) =>
-      result?.status === "error" && typeof result?.key === "string" && result.key.trim().length > 0
+      result?.status === "error" && result?.errorCode !== "xml_organization_failed" && typeof result?.key === "string" && result.key.trim().length > 0
   );
 }
 
@@ -811,7 +818,10 @@ function getFallbackHistoryEntry(result) {
     downloadMethod: result.downloadMethod || "",
     issueMonth: result.issueMonth || "",
     documentIssueDate: result.documentIssueDate || "",
-    sefaz: result.sefaz || null
+    sefaz: result.sefaz || null,
+    attempts: result.attempts || [],
+    attemptCount: result.attemptCount,
+    httpStatus: result.httpStatus
   };
 }
 
@@ -820,6 +830,7 @@ function mergeSingleFallbackResult(baseResult, fallbackResult) {
 
   return {
     ...fallbackResult,
+    initialError: baseResult.initialError || (baseResult.status === "error" ? getFallbackHistoryEntry(baseResult) : null),
     fallbackHistory: history
   };
 }
@@ -1166,7 +1177,8 @@ async function maybeRunSiteFallback({ state, label, automatic = false }) {
 async function runCertificateFallbackChain({ state, label, certificatePayload }) {
   let mergedResults = [...state.results];
   let failedMessage = state.failedMessage || "";
-  let failedItems = getFailedKeyResults(mergedResults);
+  let failedItems = getFailedKeyResults(mergedResults).filter((result) =>
+    result.lookupMode === "nfe-distribution-certificate" && result.errorCode !== "sefaz_641");
 
   if (failedItems.length > 0) {
     summary.textContent = `Consultando distribuicao NSU para ${failedItems.length} chave(s)...`;
@@ -1184,7 +1196,8 @@ async function runCertificateFallbackChain({ state, label, certificatePayload })
     }
   }
 
-  failedItems = getFailedKeyResults(mergedResults);
+  failedItems = getFailedKeyResults(mergedResults).filter((result) =>
+    ["nfe-distribution-certificate", "nfe-distribution-nsu"].includes(result.lookupMode));
   if (failedItems.length > 0) {
     summary.textContent = `Consultando sem certificado ${failedItems.length} chave(s)...`;
     clearResults(
@@ -1363,15 +1376,29 @@ async function finalizeCompletedRound({
         }
       : fallbackState;
 
-  saveReport(
-    buildFinalReport({
+  let traceFilePath = "";
+  let traceError = "";
+  try {
+    const response = await fetch("/api/lookup-reports", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ startedAt, finishedAt: Date.now(), results: finalState.results })
+    });
+    const data = await readJsonSafely(response);
+    if (!response.ok) throw new Error(data.error || "Nao foi possivel salvar o historico detalhado.");
+    traceFilePath = data.filePath || "";
+  } catch (error) { traceError = error.message; }
+  saveReport({
+    ...buildFinalReport({
       label: reportLabel,
       results: finalState.results,
       failedMessage: finalState.failedMessage,
       startedAt,
       finishedAt: Date.now()
-    })
-  );
+    }),
+    traceFilePath
+  });
+
+  if (traceError) summary.textContent += ` Alerta: historico final nao salvo (${traceError}).`;
 
   if (certificatePayload && shouldShowCertificateFallbackReport(finalState.results)) {
     openCertificateReportDialog(finalState.results);
@@ -1777,8 +1804,8 @@ function updateOrganizationHelp() {
   const automatic = organizationType.value === "auto";
   organizationCnpj.required = automatic;
   organizationHelp.textContent = automatic
-    ? "Informe o CNPJ: notas emitidas pela empresa serao saidas; notas recebidas serao entradas."
-    : "CNPJ opcional. Se vazio, entradas usam o CNPJ do destinatario e saidas usam o CNPJ do emitente. O periodo sera o mes de emissao.";
+    ? "Informe o CNPJ da empresa. Matriz e filiais serao identificadas no XML e separadas por CNPJ, mes, entradas e saidas."
+    : "Com CNPJ, matriz e filiais serao separadas automaticamente pelo XML. Sem CNPJ, sera usado o tipo selecionado. O periodo sera o mes de emissao.";
 }
 
 organizationType.addEventListener("change", updateOrganizationHelp);
@@ -1793,7 +1820,7 @@ organizationForm.addEventListener("submit", (event) => {
     organizationCnpj.focus();
     return;
   }
-  activeOrganization = { type: organizationType.value, cnpj };
+  activeOrganization = { type: organizationType.value, cnpj, includeBranches: Boolean(cnpj) };
   organizationDialog.close("confirm");
 });
 
@@ -1832,6 +1859,7 @@ form.addEventListener("submit", async (event) => {
     activeOrganization = {
       type: "auto",
       cnpj: certificateState.formattedCnpj.replace(/\D/g, ""),
+      includeBranches: true,
       requireXmlMetadata: true
     };
   } else if (!(await requestOrganization())) {
@@ -1937,6 +1965,7 @@ async function processUploadedFiles({
     activeOrganization = {
       type: "auto",
       cnpj: certificateState.formattedCnpj.replace(/\D/g, ""),
+      includeBranches: true,
       requireXmlMetadata: true
     };
   } else if (!(await requestOrganization())) {
@@ -2098,6 +2127,48 @@ if (windowCloseButton && desktopApi?.isDesktop) {
     desktopApi.closeWindow();
   });
 }
+
+const reorganizeDialog = document.querySelector("#reorganizeXmlDialog");
+document.querySelector("#reorganizeXmlButton").addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/config");
+    const config = await readJsonSafely(response);
+    document.querySelector("#reorganizeXmlDirectory").value = config.downloadsDir || "";
+    document.querySelector("#reorganizeXmlCnpj").value = activeOrganization?.cnpj || certificateState?.formattedCnpj || "";
+    document.querySelector("#reorganizeXmlMessage").textContent = "";
+    reorganizeDialog.showModal();
+  } catch (error) {
+    summary.textContent = error.message;
+  }
+});
+document.querySelector("#reorganizeXmlCancel").addEventListener("click", () => reorganizeDialog.close());
+document.querySelector("#reorganizeXmlForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = document.querySelector("#reorganizeXmlMessage");
+  const button = document.querySelector("#reorganizeXmlSubmit");
+  const cancel = document.querySelector("#reorganizeXmlCancel");
+  setControlsDisabled(true);
+  button.disabled = cancel.disabled = true;
+  message.textContent = "Lendo e movendo XMLs...";
+  try {
+    const response = await fetch("/api/reorganize-xml", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directory: document.querySelector("#reorganizeXmlDirectory").value, cnpj: document.querySelector("#reorganizeXmlCnpj").value })
+    });
+    const data = await readJsonSafely(response);
+    if (!response.ok) throw new Error(data.error || "Falha ao organizar XMLs.");
+    const text = `${data.total} XMLs: ${data.moved} movidos, ${data.unchanged} ja organizados, ${data.duplicates} duplicados, ${data.versions || 0} versoes distintas preservadas, ${data.warnings || 0} alertas de XML, ${data.skipped} pendencias. Consulte o relatorio abaixo para ver os motivos.`;
+    summary.textContent = text;
+    saveReport({ label: "Organizacao de XMLs", finishedAt: Date.now(), summaryText: text, text: ["Organizacao de XMLs", text, `Pasta: ${data.directory}`, ...data.results.map((item) => `${item.source} -> ${item.target || "original preservado"}: ${item.message}${item.warning ? " Alerta: " + item.warning : ""}`)].join("\n"), fileName: "relatorio-organizacao-xml.txt" });
+    message.textContent = text;
+    cancel.textContent = "Fechar";
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    setControlsDisabled(false);
+    button.disabled = cancel.disabled = false;
+  }
+});
 
 clearResults();
 updatePdfFileSummary();

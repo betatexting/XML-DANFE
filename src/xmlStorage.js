@@ -1,7 +1,9 @@
-const fs = require("fs/promises");
 const path = require("path");
+const { saveXmlFile } = require("./fiscalDocumentStore");
+const { getFiscalDownloadsDir } = require("./runtimePaths");
 const { getIssueDateFromXml, getIssueMonthFromAccessKey } = require("./accessKeys");
 const { resolveStorageDirectory } = require("./storageDirectories");
+const { LookupError } = require("./lookupResult");
 
 function normalizeOrganization(value = {}) {
   if (typeof value === "string") value = JSON.parse(value);
@@ -14,7 +16,7 @@ function normalizeOrganization(value = {}) {
   if ((rawCnpj && !/^\d{14}$/.test(cnpj)) || (type === "auto" && !cnpj)) {
     throw new Error("Informe um CNPJ com 14 digitos.");
   }
-  return { type, cnpj, ...(value?.requireXmlMetadata === true ? { requireXmlMetadata: true } : {}) };
+  return { type, cnpj, ...(value?.includeBranches === true ? { includeBranches: true } : {}), ...(value?.requireXmlMetadata === true ? { requireXmlMetadata: true } : {}) };
 }
 
 function getPartyCnpj(xml, party) {
@@ -23,10 +25,10 @@ function getPartyCnpj(xml, party) {
 }
 
 function getCertificateOrganization(certificate) {
-  return normalizeOrganization({ type: "auto", cnpj: certificate.cnpj, requireXmlMetadata: true });
+  return normalizeOrganization({ type: "auto", cnpj: certificate.cnpj, includeBranches: true, requireXmlMetadata: true });
 }
 
-async function saveOrganizedXml(xml, key, downloadsDir, organization) {
+function classifyXml(xml, key, organization) {
   if (!/^\d{44}$/.test(key)) {
     throw new Error("Chave invalida para organizar o XML.");
   }
@@ -39,12 +41,20 @@ async function saveOrganizedXml(xml, key, downloadsDir, organization) {
   const emitter = xmlEmitter || key.slice(6, 20);
   const recipient = getPartyCnpj(xml, "dest");
   let type = selection.type;
+  let company = selection.cnpj;
+  if (selection.includeBranches && company) {
+    const belongs = (cnpj) => /^\d{14}$/.test(cnpj) && cnpj.slice(0, 8) === company.slice(0, 8);
+    // Mixed company batches are classified from the XML, never from a supplier's key.
+    if (belongs(emitter)) { company = emitter; type = "saidas"; }
+    else if (belongs(recipient)) { company = recipient; type = "entradas"; }
+    else throw new Error("O CNPJ informado nao e emitente nem destinatario desta nota ou de suas filiais.");
+  }
   if (type === "auto") {
     if (selection.cnpj === emitter) type = "saidas";
     else if (selection.cnpj === recipient) type = "entradas";
     else throw new Error("O CNPJ informado nao e emitente nem destinatario desta nota.");
   }
-  const cnpj = selection.cnpj || (type === "entradas" ? recipient : emitter);
+  const cnpj = company || (type === "entradas" ? recipient : emitter);
   if (!cnpj) {
     throw new Error("A nota nao possui CNPJ do destinatario. Informe o CNPJ da empresa para organizar as entradas.");
   }
@@ -61,11 +71,18 @@ async function saveOrganizedXml(xml, key, downloadsDir, organization) {
     throw new Error("Periodo de emissao invalido para organizar o XML.");
   }
 
-  const directory = await resolveStorageDirectory({ downloadsDir, cnpj, period, type });
-  await fs.mkdir(directory, { recursive: true });
-  const targetFile = path.join(directory, `${key}.xml`);
-  await fs.writeFile(targetFile, `${xml.trim()}\n`, "utf8");
-  return targetFile;
+  return { cnpj, period, type, emitter, recipient };
 }
 
-module.exports = { getCertificateOrganization, normalizeOrganization, saveOrganizedXml };
+async function saveOrganizedXml(xml, key, downloadsDir = getFiscalDownloadsDir(), organization) {
+  try {
+    const classification = classifyXml(xml, key, organization);
+    const directory = await resolveStorageDirectory({ downloadsDir, ...classification });
+    const content = `${xml.trim()}\n`;
+    return (await saveXmlFile(path.join(directory, `${key}.xml`), Buffer.from(content), { versions: true })).file;
+  } catch (error) {
+    throw new LookupError(error.message, { errorCode: "xml_organization_failed", retryable: false });
+  }
+}
+
+module.exports = { classifyXml, getPartyCnpj, getCertificateOrganization, normalizeOrganization, saveOrganizedXml };

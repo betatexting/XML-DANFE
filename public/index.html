@@ -11,6 +11,8 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script>
   </head>
   <body>
     <header class="desktop-titlebar" aria-label="Barra da janela">
@@ -22,6 +24,7 @@
       </div>
 
       <div class="desktop-titlebar__actions">
+        <button class="window-control-button screen-back-button" data-back-target="/menu" type="button" aria-label="Voltar" title="Voltar">←</button>
         <button
           id="windowMinimizeButton"
           type="button"
@@ -228,6 +231,7 @@
       <section class="footer-grid">
         <article class="panel utility-panel">
           <p class="section-label">Onde salvar?</p>
+          <button id="reorganizeXmlButton" type="button" class="secondary-button">Organizar XMLs ja baixados</button>
           <div
             id="downloadsDir"
             class="save-path"
@@ -292,6 +296,23 @@
         </div>
       </section>
 
+      <dialog id="reorganizeXmlDialog" class="certificate-dialog" aria-labelledby="reorganizeXmlTitle">
+        <form id="reorganizeXmlForm" class="certificate-dialog__panel">
+          <p class="section-label">Organizar arquivos</p>
+          <h2 id="reorganizeXmlTitle" class="fallback-dialog__title">Organizar XMLs ja baixados</h2>
+          <p class="utility-copy">Selecione a pasta que contem os XMLs e todos os periodos. As subpastas tambem serao analisadas.</p>
+          <label class="field-label" for="reorganizeXmlDirectory">Pasta dos XMLs</label>
+          <input id="reorganizeXmlDirectory" type="text" required />
+          <label class="field-label" for="reorganizeXmlCnpj">CNPJ da empresa</label>
+          <input id="reorganizeXmlCnpj" type="text" inputmode="numeric" maxlength="18" autocomplete="off" placeholder="00.000.000/0000-00" required />
+          <p class="utility-copy">Organiza por mes de emissao em AAAA-MM / entradas ou saidas, reutilizando as pastas existentes. Versoes diferentes sao preservadas e pendencias aparecem no relatorio.</p>
+          <p id="reorganizeXmlMessage" class="certificate-dialog__message" role="status" aria-live="polite"></p>
+          <div class="fallback-dialog__actions">
+            <button id="reorganizeXmlCancel" type="button" class="ghost-button">Cancelar</button>
+            <button id="reorganizeXmlSubmit" type="submit" class="primary-button">Organizar e mover</button>
+          </div>
+        </form>
+      </dialog>
       <dialog id="organizationDialog" class="certificate-dialog" aria-labelledby="organizationDialogTitle">
         <form id="organizationForm" class="certificate-dialog__panel">
           <p class="section-label">Organizar arquivos</p>

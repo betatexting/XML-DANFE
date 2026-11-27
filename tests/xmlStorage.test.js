@@ -67,7 +67,7 @@ test("certificate organization reads the parties and emission month from XML", a
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "xml-storage-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const organization = getCertificateOrganization({ cnpj: "44823938000187" });
-  assert.deepEqual(organization, { type: "auto", cnpj: "44823938000187", requireXmlMetadata: true });
+  assert.deepEqual(organization, { type: "auto", cnpj: "44823938000187", includeBranches: true, requireXmlMetadata: true });
   // XML parties and period deliberately differ from the key to verify their source.
   const incoming = '<n:NFe><n:ide><n:dhEmi>2026-05-01T00:15:00-03:00</n:dhEmi></n:ide><n:emit><n:CNPJ>21444661000186</n:CNPJ></n:emit><n:dest><n:CNPJ>44823938000187</n:CNPJ></n:dest></n:NFe>';
   const entry = await saveOrganizedXml(incoming, key, directory, organization);

@@ -15,6 +15,7 @@ test("site fallback eligibility includes generic failures and excludes invalid k
   assert.equal(isFallbackEligibleResult({ key: keyA, status: "success" }), false);
   assert.equal(isFallbackEligibleResult({ key: "invalid", status: "error" }), false);
   assert.equal(isFallbackEligibleResult({ key: keyA, status: "error", lookupMode: "site-fallback" }), false);
+  assert.equal(isFallbackEligibleResult({ key: keyA, status: "error", lookupMode: "nfe-distribution-certificate", errorCode: "xml_organization_failed" }), false);
 });
 
 test("manual, PDF and spreadsheet flows offer site fallback and generate copyable key lists", { skip: !fs.existsSync(browserPath) }, async (t) => {
@@ -38,7 +39,7 @@ test("manual, PDF and spreadsheet flows offer site fallback and generate copyabl
         called.push(endpoint);
         if (endpoint === "/api/certificate/discard") return route.fulfill({ contentType: "application/json", body: "{}" });
         const site = endpoint === "/api/process-fallback";
-        const mode = endpoint === "/api/process-distnsu" ? "nfe-distribution-nsu" : "http-direct";
+        const mode = endpoint === "/api/process-distnsu" ? "nfe-distribution-nsu" : certified && endpoint !== "/api/process-items" ? "nfe-distribution-certificate" : "http-direct";
         const results = [
           { key: keyA, status: site ? "success" : "error", lookupMode: site ? "site-fallback" : mode, errorCode: site ? "" : "pendente", fallbackEligible: false, fileName: `${keyA}.xml` },
           { key: keyB, status: "error", lookupMode: site ? "site-fallback" : mode, message: "Erro simulado sem rejeicao de prazo", fallbackEligible: false }
@@ -83,6 +84,17 @@ test("manual, PDF and spreadsheet flows offer site fallback and generate copyabl
         results: [{ key: keyA, status: "success" }, { key: keyA, status: "success" }, { key: keyB, status: "error", message: "nao imprimir" }, { key: "invalid", status: "error" }]
       }).text, { keyA, keyB }), expected);
       assert.deepEqual(errors, []);
+      const history = await page.evaluate(() => {
+        const first = { key: "test", status: "error", errorCode: "initial", httpStatus: 400,
+          lookupMode: "http-direct", attempts: [{ status: "error", durationMs: 5, startedAt: "2026-11-16T12:00:00Z" }] };
+        const second = mergeSingleFallbackResult(first, { key: "test", status: "error", errorCode: "second", lookupMode: "nfe-distribution-nsu" });
+        return mergeSingleFallbackResult(second, { key: "test", status: "success", lookupMode: "site-fallback", attempts: [{ status: "success", durationMs: 10 }] });
+      });
+      assert.equal(history.status, "success");
+      assert.equal(history.initialError.errorCode, "initial");
+      assert.equal(history.initialError.attempts[0].durationMs, 5);
+      assert.equal(history.fallbackHistory.length, 2);
+      assert.equal(history.fallbackHistory[1].errorCode, "second");
       await page.close();
     }
   }

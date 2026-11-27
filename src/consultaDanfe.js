@@ -1,5 +1,7 @@
-const { saveOrganizedXml } = require("./xmlStorage");
+const { classifyXml, saveOrganizedXml } = require("./xmlStorage");
 const { getIssueDateFromXml } = require("./accessKeys");
+const { attemptRecord } = require("./lookupTrace");
+const { apiRequestQueue } = require("./apiRequestQueue");
 const {
   DEFAULT_RETRY_DELAY_MS,
   LOOKUP_MODE_HTTP_DIRECT,
@@ -109,15 +111,12 @@ function parseRetryAfterMs(response) {
 
   const seconds = Number.parseInt(retryAfter, 10);
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.min(Math.max(seconds * 1000, DEFAULT_RETRY_DELAY_MS), MAX_RETRY_DELAY_MS);
+    return Math.max(seconds * 1000, DEFAULT_RETRY_DELAY_MS);
   }
 
   const dateValue = Date.parse(retryAfter);
   if (Number.isFinite(dateValue)) {
-    return Math.min(
-      Math.max(dateValue - Date.now(), DEFAULT_RETRY_DELAY_MS),
-      MAX_RETRY_DELAY_MS
-    );
+    return Math.max(dateValue - Date.now(), DEFAULT_RETRY_DELAY_MS);
   }
 
   return DEFAULT_RETRY_DELAY_MS;
@@ -160,6 +159,7 @@ function isPendingPayload(payload, response) {
 }
 
 async function requestXmlForKey(key) {
+  await apiRequestQueue.beforeRequest();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
@@ -181,6 +181,7 @@ async function requestXmlForKey(key) {
     });
     const payload = await readJsonSafely(response);
     const errorCode = readApiErrorCode(payload, response);
+    if (response.status === 429) apiRequestQueue.pause(response.headers.get("retry-after") ? parseRetryAfterMs(response) : 60000);
 
     if (!response.ok) {
       throw createLookupError(
@@ -265,14 +266,18 @@ async function saveXmlForKey(xml, key, downloadsDir, attemptCount, organization)
       lookupMode: LOOKUP_MODE_HTTP_DIRECT,
       attemptCount
     }),
+    companyCnpj: classifyXml(xml, key, organization).cnpj,
+    invoiceType: classifyXml(xml, key, organization).type,
     documentIssueDate: getIssueDateFromXml(xml)
   };
 }
 
 async function downloadForKey(key, downloadsDir, onProgress, organization) {
   let lastError = null;
+  const attempts = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_KEY; attempt += 1) {
+    const startedAt = Date.now();
     try {
       if (typeof onProgress === "function") {
         await onProgress({
@@ -285,18 +290,21 @@ async function downloadForKey(key, downloadsDir, onProgress, organization) {
       }
 
       const xml = await requestXmlForKey(key);
-      return await saveXmlForKey(xml, key, downloadsDir, attempt, organization);
+      const result = await saveXmlForKey(xml, key, downloadsDir, attempt, organization);
+      attempts.push(attemptRecord({ attempt, startedAt, lookupMode: LOOKUP_MODE_HTTP_DIRECT }));
+      return { ...result, attempts, initialError: attempts.find((item) => item.status === "error") || null };
     } catch (error) {
       lastError = decorateLookupAttempt(error, attempt);
+      attempts.push(attemptRecord({ attempt, startedAt, lookupMode: LOOKUP_MODE_HTTP_DIRECT, error: lastError }));
+      lastError.attempts = [...attempts];
+      await onProgress?.({ type: "attempt-result", key, ...attempts[attempts.length - 1] });
 
-      if (!lastError.retryable || attempt === MAX_ATTEMPTS_PER_KEY) {
+      if (!lastError.retryable || attempt === MAX_ATTEMPTS_PER_KEY || (lastError.httpStatus === 429 && lastError.retryAfterMs > 60000)) {
         break;
       }
 
-      const retryDelayMs = Math.min(
-        Math.max(lastError.retryAfterMs || DEFAULT_RETRY_DELAY_MS, DEFAULT_RETRY_DELAY_MS),
-        MAX_RETRY_DELAY_MS
-      );
+      const requestedDelay = Math.max(lastError.retryAfterMs || DEFAULT_RETRY_DELAY_MS, DEFAULT_RETRY_DELAY_MS);
+      const retryDelayMs = lastError.httpStatus === 429 ? requestedDelay : Math.min(requestedDelay, MAX_RETRY_DELAY_MS);
 
       if (typeof onProgress === "function") {
         await onProgress({

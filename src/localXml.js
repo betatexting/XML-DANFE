@@ -1,8 +1,9 @@
 const fs = require("fs/promises");
 const path = require("path");
 const sax = require("sax");
-const { normalizeOrganization } = require("./xmlStorage");
+const { classifyXml, normalizeOrganization, saveOrganizedXml } = require("./xmlStorage");
 const { storageBase } = require("./storageDirectories");
+const { getFiscalDownloadsDir } = require("./runtimePaths");
 
 function parseXml(xml) {
   const parser = sax.parser(true, { xmlns: true, trim: false });
@@ -43,9 +44,10 @@ function inspectLocalXml(xml, key, organization) {
     const emitter = value(child(info, "emit"), "cnpj");
     const recipient = value(child(info, "dest"), "cnpj");
     if (emitter !== key.slice(6, 20)) return null;
-    if (selection.cnpj && selection.cnpj !== emitter && selection.cnpj !== recipient) return null;
-    if (selection.type === "entradas" && selection.cnpj && selection.cnpj !== recipient) return null;
-    if (selection.type === "saidas" && selection.cnpj && selection.cnpj !== emitter) return null;
+    if (selection.includeBranches) classifyXml(xml, key, selection);
+    if (!selection.includeBranches && selection.cnpj && selection.cnpj !== emitter && selection.cnpj !== recipient) return null;
+    if (!selection.includeBranches && selection.type === "entradas" && selection.cnpj && selection.cnpj !== recipient) return null;
+    if (!selection.includeBranches && selection.type === "saidas" && selection.cnpj && selection.cnpj !== emitter) return null;
     if (selection.type === "entradas" && !selection.cnpj && !/^\d{14}$/.test(recipient)) return null;
     const ide = child(info, "ide");
     const documentIssueDate = value(ide, "dhemi") || value(ide, "demi");
@@ -63,7 +65,7 @@ function inspectLocalXml(xml, key, organization) {
 async function findLocalXmls({ keys, downloadsDir, organization }) {
   const remaining = new Set(keys.filter((key) => /^\d{44}$/.test(key)));
   const found = new Map();
-  const directories = [storageBase(downloadsDir)];
+  const directories = [...new Set([storageBase(downloadsDir), getFiscalDownloadsDir()])];
   while (directories.length && remaining.size) {
     const directory = directories.shift();
     let entries;
@@ -84,9 +86,18 @@ async function findLocalXmls({ keys, downloadsDir, organization }) {
       try { metadata = inspectLocalXml(await fs.readFile(filePath, "utf8"), key, organization); }
       catch (_error) { continue; }
       if (!metadata) continue;
+      let targetFile = filePath;
+      if (organization?.includeBranches) {
+        try { targetFile = await saveOrganizedXml(await fs.readFile(filePath, "utf8"), key, downloadsDir, organization); }
+        catch (error) {
+          found.set(key, { key, status: "error", errorCode: error.errorCode, message: error.message, lookupMode: "local-file", retryable: false });
+          remaining.delete(key);
+          continue;
+        }
+      }
       found.set(key, {
         key, status: "success", alreadyAvailable: true, lookupMode: "local-file", downloadMethod: "local-file",
-        filePath, fileName: entry.name, attemptCount: 0, ...metadata
+        filePath: targetFile, fileName: path.basename(targetFile), attemptCount: 0, ...metadata
       });
       remaining.delete(key);
     }
@@ -94,4 +105,4 @@ async function findLocalXmls({ keys, downloadsDir, organization }) {
   return found;
 }
 
-module.exports = { findLocalXmls, inspectLocalXml };
+module.exports = { findLocalXmls, inspectLocalXml, parseXml };

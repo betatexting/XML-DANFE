@@ -1,10 +1,20 @@
 const express = require("express");
+const { localAuth } = require("./src/localAuth");
+const { installAuth } = require("./src/authRoutes");
+const { installCompanyRoutes } = require("./src/companyCatalog");
+const { installNoteInventoryRoutes } = require("./src/noteInventory");
+const { installKeyCollectionRoutes } = require("./src/keyCollection");
+const { installMdfeRoutes } = require("./src/mdfeConsulta");
+const { installNfseRoutes } = require("./src/nfseDistribution");
+const { installCteRoutes } = require("./src/cteDistribution");
+const { installFiscalArchiveRoutes } = require("./src/fiscalXmlArchive");
 const path = require("path");
 const fs = require("fs/promises");
 const { execFile } = require("child_process");
 const multer = require("multer");
 const XLSX = require("xlsx");
-const { DEFAULT_CONCURRENT_LOOKUPS, processAccessKeys } = require("./src/consultaDanfe");
+const { DEFAULT_CONCURRENT_LOOKUPS } = require("./src/consultaDanfe");
+const { processRoutedKeys } = require("./src/lookupRouting");
 const { extractAccessKeys, getIssueMonthFromAccessKey } = require("./src/accessKeys");
 const {
   CertificateError,
@@ -24,17 +34,19 @@ const { extractCandidatesFromPdfFiles } = require("./src/pdfToXml");
 const { resolveUserDataDir } = require("./src/runtimePaths");
 const { processAccessKeysWithSiteFallback } = require("./src/siteFallback");
 const { findLocalXmls } = require("./src/localXml");
+const { createTrace, traceResult } = require("./src/lookupTrace");
 const {
   SUPPORTED_SPREADSHEET_EXTENSIONS,
   extractCandidatesFromSpreadsheetFiles
 } = require("./src/spreadsheetKeys");
 
 const app = express();
+app.locals.auth = localAuth;
 const preferredPort = Number.parseInt(process.env.PORT, 10) || 3000;
 const allowPortFallback = !process.env.PORT;
 const defaultDownloadsDir =
   process.env.DOWNLOADS_DIR ||
-  path.join("C:\\Users\\Contas Contabilidade\\Desktop", "werasmim");
+  require("./src/runtimePaths").getFiscalDownloadsDir();
 const { getCertificateOrganization, normalizeOrganization } = require("./src/xmlStorage");
 let downloadsDir = defaultDownloadsDir;
 let settingsFilePathPromise = null;
@@ -262,6 +274,7 @@ function getCertificateRequestData(req) {
   return {
     id: certificateId,
     ...identity,
+    companyCnpjs: (storedCertificate.companyCnpjs ||= [identity.cnpj]),
     authorUfCode,
     pfx: storedCertificate.buffer,
     passphrase
@@ -398,11 +411,20 @@ async function processCandidateBatch({
   res,
   candidates,
   organization,
-  processor = processAccessKeys
+  processor = processRoutedKeys
 }) {
   const total = candidates.length;
   const { results, candidatesByKey } = groupCandidatesByKey(candidates);
   let completed = 0;
+  let trace;
+  let traceError = "";
+  async function record(event) {
+    try {
+      if (!trace && !traceError) trace = await createTrace(downloadsDir, "consulta");
+      if (trace) await trace.append(event);
+    } catch (error) { traceError = error.message; trace = null; }
+  }
+  await record({ type: "start", total });
 
   startResultStream(res);
   writeStreamEvent(res, {
@@ -412,6 +434,7 @@ async function processCandidateBatch({
 
   for (const result of results) {
     completed += 1;
+    await record({ type: "result", result: traceResult(result) });
     writeResultEvent(res, result, {
       completed,
       total
@@ -425,6 +448,7 @@ async function processCandidateBatch({
     for (const candidate of candidatesByKey.get(key)) {
       const result = attachCandidateMetadata(localResult, candidate);
       results.push(result);
+      await record({ type: "result", result: traceResult(result) });
       completed += 1;
       writeResultEvent(res, result, { completed, total });
     }
@@ -437,12 +461,14 @@ async function processCandidateBatch({
       downloadsDir,
       organization,
       onProgress: async (progress, meta = {}) => {
+        await record({ type: "progress", progress: { type: progress.type, ...traceResult(progress) } });
         writeProgressEvent(res, progress, {
           total,
           sourceIndex: meta.sourceIndex
         });
       },
       onResult: async (downloadResult) => {
+        await record({ type: "result", result: traceResult(downloadResult) });
         const groupedCandidates = candidatesByKey.get(downloadResult.key) ?? [];
 
         if (groupedCandidates.length === 0) {
@@ -473,10 +499,13 @@ async function processCandidateBatch({
     });
   }
 
+  await record({ type: "complete", total });
   writeStreamEvent(res, {
     type: "complete",
     results,
-    total
+    total,
+    traceFilePath: trace?.filePath,
+    traceError
   });
 }
 
@@ -514,8 +543,41 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
   });
 }
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "12mb" }));
+installAuth(app);
+installCompanyRoutes(app);
+installNoteInventoryRoutes(app, { getDownloadsDir: () => downloadsDir });
+installKeyCollectionRoutes(app);
+installMdfeRoutes(app);
+installNfseRoutes(app);
+installCteRoutes(app);
+installFiscalArchiveRoutes(app, { getDownloadsDir: () => downloadsDir });
 app.use(express.static(path.join(__dirname, "public")));
+
+app.post("/api/lookup-reports", async (req, res) => {
+  if (!Array.isArray(req.body?.results) || req.body.results.length > 20000) return res.status(400).json({ error: "Resultados invalidos para o relatorio." });
+  try {
+    const trace = await createTrace(downloadsDir, "resultado-final");
+    await trace.append({ type: "final", startedAt: req.body.startedAt, finishedAt: req.body.finishedAt,
+      results: req.body.results.map(traceResult) });
+    res.json({ filePath: trace.filePath });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+let reorganizingXml = false;
+app.post("/api/reorganize-xml", async (req, res) => {
+  if (reorganizingXml) return res.status(409).json({ error: "Ja existe uma reorganizacao em andamento." });
+  reorganizingXml = true;
+  try {
+    const { reorganizeXml } = require("./src/reorganizeXml");
+    const result = await reorganizeXml({ directory: req.body?.directory || downloadsDir, cnpj: req.body?.cnpj });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Falha ao reorganizar os XMLs." });
+  } finally {
+    reorganizingXml = false;
+  }
+});
 
 app.post("/api/diagnostics", async (req, res) => {
   const keys = extractAccessKeys(req.body?.rawKeys);
@@ -653,7 +715,7 @@ app.post("/api/process", async (req, res) => {
         sourceType: "manual",
         status: "pending"
       })),
-      processor: certificate ? buildCertificateProcessor(certificate) : processAccessKeys
+      processor: certificate ? buildCertificateProcessor(certificate) : processRoutedKeys
     });
     return res.end();
   } catch (error) {
@@ -734,7 +796,7 @@ app.post("/api/process-items", async (req, res) => {
       res,
       organization: normalizeOrganization(req.body?.organization),
       candidates,
-      processor: buildProcessorWithDownloadMethod(processAccessKeys, "without-certificate-api")
+      processor: processRoutedKeys
     });
     return res.end();
   } catch (error) {
@@ -772,7 +834,7 @@ app.post("/api/process-pdfs", pdfUpload.array("pdfs", 20), async (req, res) => {
       res,
       organization: certificate ? getCertificateOrganization(certificate) : normalizeOrganization(req.body?.organization),
       candidates,
-      processor: certificate ? buildCertificateProcessor(certificate) : processAccessKeys
+      processor: certificate ? buildCertificateProcessor(certificate) : processRoutedKeys
     });
     return res.end();
   } catch (error) {
@@ -817,7 +879,7 @@ app.post(
         res,
         organization: certificate ? getCertificateOrganization(certificate) : normalizeOrganization(req.body?.organization),
         candidates,
-        processor: certificate ? buildCertificateProcessor(certificate) : processAccessKeys
+        processor: certificate ? buildCertificateProcessor(certificate) : processRoutedKeys
       });
       return res.end();
     } catch (error) {

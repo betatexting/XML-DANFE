@@ -1,0 +1,43 @@
+.registration-scene { padding: 30px 32px 24px 24px; }
+.registration-panel { height: calc(100svh - 54px); min-height: 386px; }
+.registration-window-actions { opacity: 1; z-index: 3; }
+.registration-scroll { position: absolute; inset: 53px 28px 20px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #686169 #131214; -webkit-app-region: no-drag; }
+.registration-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 20px; max-width: 640px; margin: 0 auto; padding: 2px 8px 10px; }
+.registration-form h1 { grid-column: 1 / -1; margin: 0 0 8px; color: #c5c3c6; font-size: 23px; font-weight: 700; }
+.registration-field { display: block; min-width: 0; color: #b9b9b9; font-size: 14px; font-weight: 700; }
+.registration-field > span { font-size: 11px; font-weight: 400; color: #a7949d; }
+.registration-field input, .registration-field select { display: block; width: 100%; height: 37px; margin-top: 8px; padding: 6px 9px; color: #dedede; background: #202020; border: 1px solid #8b8b8b; border-radius: 5px; font: 15px Consolas, "Lucida Console", monospace; outline: none; }
+.registration-field input:focus, .registration-field select:focus { border-color: var(--edge-bright); }
+.registration-code { max-width: 190px; }
+.registration-document, .registration-wide { grid-column: 1 / -1; }
+.registration-document { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); gap: 0 20px; }
+#documentHint { grid-column: 1 / -1; margin: 6px 0 0; color: #8f898e; font-size: 11px; }
+.document-validation-message { grid-column: 1 / -1; margin: 6px 0 0; color: #ec9bb2; font-size: 12px; line-height: 1.4; }
+.document-validation-message:empty { display: none; }
+.registration-field input[aria-invalid="true"] { border-color: var(--edge-bright); }
+.registration-section { margin: 1px 0 -4px; padding-top: 10px; border-top: 1px solid #39333a; color: #d58198; font-size: 13px; }
+.registration-hint { margin: 0; color: #8f898e; font-size: 11px; line-height: 1.5; }
+.registration-message { margin: 0; color: #ec9bb2; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.registration-message:empty { display: none; }
+.registration-actions { display: flex; justify-content: flex-end; gap: 14px; padding-top: 4px; }
+.registration-actions button { min-height: 32px; padding: 5px 15px; color: #c5c3c6; background: #202020; border: 1px solid #8b8b8b; border-radius: 4px; cursor: pointer; font-size: 13px; }
+#registrationSave { border-color: var(--edge-base); }
+.registration-actions button:enabled:hover { color: #fb7c9d; border-color: var(--edge-bright); }
+.registration-actions button:disabled { opacity: .6; cursor: default; }
+.registration-certificate { display: grid; gap: 12px; min-width: 0; }
+.registration-certificate-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.registration-certificate-actions button { min-height: 32px; padding: 5px 12px; color: #c5c3c6; background: #202020; border: 1px solid #8b8b8b; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.registration-certificate-actions button:enabled:hover { border-color: var(--edge-bright); }
+.registration-certificate-actions button:disabled { opacity: .5; cursor: default; }
+#registrationCertificateFile { margin: 0; font-size: 12px; color: #a7949d; overflow-wrap: anywhere; }
+#companyCertificatePassword:disabled { opacity: .5; }
+@media (max-width: 540px) {
+  .registration-scene { padding: 25px 25px 20px; }
+  .registration-panel { height: calc(100svh - 45px); min-height: 395px; }
+  .registration-scroll { inset: 50px 14px 16px; }
+  .registration-form { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .registration-form h1 { font-size: 20px; }
+  .registration-document { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .registration-code { max-width: none; }
+  .registration-actions { flex-wrap: wrap; }
+}

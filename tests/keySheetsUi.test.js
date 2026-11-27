@@ -1,0 +1,120 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const os = require("node:os");
+const express = require("express");
+const { chromium } = require("playwright-core");
+const { installAuth } = require("../src/authRoutes");
+const { createCompanyCatalog, installCompanyRoutes } = require("../src/companyCatalog");
+const { createKeyCollection, installKeyCollectionRoutes } = require("../src/keyCollection");
+const a = { id: "a", legalName: "Empresa A" }, b = { id: "b", legalName: "Empresa B" };
+const key = "29261014078646000104550050000078661136729035";
+test("key sheets UI respects selected company/period, exposes only authenticated data and displays challenge in app", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "key-sheets-ui-"));
+  const app = express(); app.use(express.json());
+  const cookie = await require("./helpers/auth").authenticateTestApp(app, directory);
+  installAuth(app);
+  const filePath = path.join(directory, "companies.json"); await fs.writeFile(filePath, JSON.stringify({ companies: [a, b], selectedCompanyId: "a" }));
+  app.locals.companyCatalog = createCompanyCatalog({ filePath }); installCompanyRoutes(app);
+  let captcha = false, releaseLogin;
+  const loginReady = new Promise((resolve) => { releaseLogin = resolve; });
+  const api = createKeyCollection({ root: path.join(directory, "collections"), catalog: app.locals.companyCatalog, getCredentials: async () => ({ login: "fixture", password: "fixture" }), collector: async ({ onStage, onFile, from, to, directions, solveCaptcha }) => {
+    await onStage("authenticating");
+    if (captcha) {
+      await onStage("confirming_login");
+      await loginReady;
+      await onStage("awaiting_captcha");
+      assert.equal(await solveCaptcha({ image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=", attempt: 1, direction: "saidas" }), "ABCDE");
+    }
+    for (const direction of directions) await onFile({ direction, from, to, filename: "rpt_cons_emit.csv", buffer: Buffer.from(`Chave de Acesso;Data de Autorização\n${key};${from}\n`) });
+    return { partial: false };
+  } });
+  app.locals.keyCollection = api; installKeyCollectionRoutes(app); app.use(express.static(path.resolve("public")));
+  async function seed(companyId, from, to) {
+    const job = await api.start({ companyId, from, to, directions: ["saidas"] });
+    for (let i = 0; i < 100; i++) { if (["completed", "failed"].includes((await api.job(job.id)).status)) return; await new Promise((resolve) => setTimeout(resolve, 20)); }
+    throw Error("Fixture job timed out");
+  }
+  await seed("a", "2026-10-01", "2026-10-31"); await seed("a", "2026-11-18", "2026-11-18"); await seed("b", "2026-10-01", "2026-10-31");
+  const server = app.listen(0, "127.0.0.1"); await new Promise((resolve) => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(base + "/api/key-sheets?companyId=a&from=2026-10-01&to=2026-10-31")).status, 401);
+  assert.equal((await fetch(base + "/api/key-collections", { method: "POST", headers: { "Content-Type": "application/json" }, body: '{}' })).status, 401);
+  const browser = await chromium.launch({ executablePath: path.resolve(".playwright-browsers/chromium_headless_shell-1228/chrome-headless-shell-win64/chrome-headless-shell.exe"), headless: true });
+  t.after(async () => { await browser.close(); await new Promise((resolve) => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
+  const context = await browser.newContext({ viewport: { width: 1120, height: 760 } });
+  await context.addCookies([{ name: cookie.split('=')[0], value: cookie.split('=')[1], url: base }]);
+  await context.addInitScript(() => { window.consultaDanfeDesktop = { isDesktop: true, closeWindow() {}, minimizeWindow() {} }; });
+  const page = await context.newPage(); await page.clock.setFixedTime(new Date("2026-11-19T15:00:00Z"));
+  const errors = []; page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(base + "/menu"); await page.getByRole("button", { name: "Planilhas de Chaves", exact: true }).click();
+  await page.waitForURL("**/planilhas-chaves");
+  await page.waitForFunction(() => document.querySelector('#sheetList .sheet-row'));
+  assert.equal(await page.locator('#sheetList .sheet-row').count(), 1);
+  assert.match(await page.locator('#sheetList').textContent(), /2026-10-01/);
+  await page.getByRole("button", { name: "Ver chaves" }).click();
+  await page.waitForFunction(() => document.querySelector('#sheetKeys').value.length === 44);
+  assert.equal(await page.locator('#sheetKeys').inputValue(), key);
+  await page.route("**/api/companies/a/fiscal-xml/archive?**", (route) => {
+    const filters = new URL(route.request().url()).searchParams;
+    assert.equal(filters.get("type"), "nfse");
+    assert.equal(filters.get("month"), "2026-10");
+    return route.fulfill({ contentType: "application/zip", body: Buffer.from("fixture") });
+  });
+  await page.getByText("Baixar XMLs em lote", { exact: true }).click();
+  await page.locator("#sheetFiscalType").selectOption("nfse");
+  await page.locator("#sheetFiscalMonth").fill("2026-10");
+  const zip = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Baixar ZIP", exact: true }).click();
+  assert.equal((await zip).suggestedFilename(), "xml-nfse-2026-10.zip");
+  await page.getByText("Baixar XMLs em lote", { exact: true }).click();
+  const cteKey = key.slice(0, 20) + "57" + key.slice(22);
+  let finishCte;
+  const cteResponseReady = new Promise((resolve) => { finishCte = resolve; });
+  await page.route("**/api/companies/a/cte", (route) => route.fulfill({
+    json: route.request().method() === "POST" ? { added: 1, documents: [{ key: cteKey, nsu: "1" }] } : { documents: [] }
+  }));
+  await page.route("**/api/companies/a/cte/situation", async (route) => {
+    assert.deepEqual(route.request().postDataJSON(), { key: cteKey });
+    await cteResponseReady;
+    await route.fulfill({ json: { status: "100", reason: "Autorizado", protocol: "123", events: [{ type: "110110", description: "Carta de correção" }], nsu: "1" } });
+  });
+  await page.getByText("Chaves de CT-e", { exact: true }).click();
+  await page.getByRole("button", { name: "Buscar chaves de CT-e" }).click();
+  await page.getByText("Busca finalizada", { exact: true }).waitFor();
+  await page.getByLabel("Chaves de CT-e coletadas").selectOption(cteKey);
+  await page.getByRole("button", { name: "Consultar CT-e por chave" }).click();
+  await page.getByText("Consultando CT-e", { exact: true }).waitFor();
+  finishCte();
+  await page.getByText("Consulta finalizada", { exact: true }).waitFor();
+  await page.getByText("Carta de correção", { exact: true }).waitFor();
+  assert.match(await page.locator("#sheetCteMessage").textContent(), /Protocolo 123/);
+  assert.equal(await page.getByRole("link", { name: "Baixar XML coletado" }).getAttribute("href"), "/api/companies/a/cte/1/xml");
+  await page.getByText("Chaves de CT-e", { exact: true }).click();
+  await page.locator('#sheetCompany').selectOption('b');
+  await page.waitForFunction(() => document.querySelector('#sheetPreview').hidden);
+  await page.locator('#sheetFrom').fill('2026-11-18'); await page.locator('#sheetTo').fill('2026-11-18'); await page.locator('#sheetTo').blur();
+  await page.getByRole('button', { name: 'Atualizar lista' }).click();
+  await page.waitForFunction(() => document.querySelector('#sheetList').textContent.includes('Nenhuma planilha'));
+  await page.locator('#sheetCompany').selectOption('a');
+  await page.waitForFunction(() => !!document.querySelector('#sheetList .sheet-row'));
+  captcha = true;
+  await page.locator('#sheetDirection').selectOption('saidas'); await page.locator('#collectSheets').click();
+  await page.locator("#sheetCollectionStatus").getByText("Consultando NF-e", { exact: true }).waitFor();
+  await page.getByText(/Aguardando a confirmação do login no portal/).first().waitFor();
+  releaseLogin();
+  await page.waitForFunction(() => !document.querySelector('#sheetChallenge').hidden);
+  assert.equal(await page.locator("#sheetCollectionStatus").textContent(), "Aguardando código da imagem");
+  await page.locator('#sheetCaptchaAnswer').fill('ABCDE'); await page.locator('#sheetCaptchaSubmit').click();
+  await page.waitForFunction(() => document.querySelector('#sheetMessage').textContent.includes('Concluída'));
+  await page.locator("#sheetCollectionStatus").getByText("Consulta finalizada", { exact: true }).waitFor();
+  assert.equal(await page.locator('#sheetList .sheet-row').count(), 2);
+  const artifacts = path.resolve('tmp-key-sheets'); await fs.mkdir(artifacts, { recursive: true });
+  await page.screenshot({ path: path.join(artifacts, 'key-sheets.png'), omitBackground: true });
+  await page.setViewportSize({ width: 480, height: 440 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: path.join(artifacts, 'key-sheets-small.png'), omitBackground: true });
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click(); await page.waitForURL('**/menu');
+  assert.deepEqual(errors, []);
+});

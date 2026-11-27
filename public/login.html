@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login · Consulta DANFE</title>
+    <link rel="stylesheet" href="/login.css" />
+    <link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script>
+    <script src="/login.js" defer></script>
+  </head>
+  <body>
+    <main class="login-scene" aria-label="Acesso ao Consulta DANFE">
+      <section class="login-panel" aria-label="Login">
+        <div class="login-panel__pink" aria-hidden="true"></div>
+        <div class="login-panel__cyan" aria-hidden="true"></div>
+        <div class="login-panel__surface" aria-hidden="true"></div>
+        <div class="login-window-actions" hidden>
+          <button id="loginMinimize" type="button" aria-label="Minimizar">−</button>
+          <button id="loginClose" type="button" aria-label="Fechar">×</button>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label for="loginUsername">Login</label>
+          <input id="loginUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64" required />
+          <label for="loginPassword">Senha</label>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" maxlength="256" required />
+          <div class="login-form__actions">
+            <label class="remember-login" for="rememberLogin">
+              <span>salvar</span>
+              <input id="rememberLogin" type="checkbox" aria-label="Salvar login e senha neste computador" />
+              <span class="remember-login__diamond" aria-hidden="true"></span>
+            </label>
+            <button id="loginSubmit" class="login-submit" type="submit" disabled>entrar</button>
+          </div>
+          <p id="loginMessage" class="login-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <dialog id="setupDialog" class="setup-dialog" aria-labelledby="setupTitle">
+      <form id="setupForm">
+        <h1 id="setupTitle">Criar acesso local</h1>
+        <p>Este computador ainda não possui um acesso cadastrado. Confirme a senha para cadastrar o login informado.</p>
+        <label for="setupPassword">Confirmar senha</label>
+        <input id="setupPassword" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+        <p id="setupMessage" role="status" aria-live="polite"></p>
+        <div class="setup-dialog__actions">
+          <button id="setupCancel" type="button">cancelar</button>
+          <button type="submit">criar acesso</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

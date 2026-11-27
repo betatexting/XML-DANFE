@@ -1,9 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const { saveOrganizedXml } = require("./xmlStorage");
+const { classifyXml, saveOrganizedXml } = require("./xmlStorage");
 const { chromium } = require("playwright-core");
 const { getIssueDateFromXml } = require("./accessKeys");
 const selectors = require("./selectors");
+const { attemptRecord } = require("./lookupTrace");
 const { extractXmlFromApiPayload } = require("./consultaDanfe");
 const {
   LOOKUP_MODE_SITE_FALLBACK,
@@ -284,6 +285,8 @@ async function saveXmlForKey(xml, key, downloadsDir, attemptCount, organization)
       lookupMode: LOOKUP_MODE_SITE_FALLBACK,
       attemptCount
     }),
+    companyCnpj: classifyXml(xml, key, organization).cnpj,
+    invoiceType: classifyXml(xml, key, organization).type,
     documentIssueDate: getIssueDateFromXml(xml)
   };
 }
@@ -307,8 +310,10 @@ function decorateLookupAttempt(error, attemptCount) {
 
 async function downloadForKey(page, key, downloadsDir, onProgress, organization) {
   let lastError = null;
+  const attempts = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_KEY; attempt += 1) {
+    const startedAt = Date.now();
     try {
       if (typeof onProgress === "function") {
         await onProgress({
@@ -323,9 +328,14 @@ async function downloadForKey(page, key, downloadsDir, onProgress, organization)
       await openLookupPage(page);
       await typeAccessKey(page, key);
       const xml = await requestXmlForKey(page);
-      return await saveXmlForKey(xml, key, downloadsDir, attempt, organization);
+      const result = await saveXmlForKey(xml, key, downloadsDir, attempt, organization);
+      attempts.push(attemptRecord({ attempt, startedAt, lookupMode: LOOKUP_MODE_SITE_FALLBACK }));
+      return { ...result, attempts, initialError: attempts.find((item) => item.status === "error") || null };
     } catch (error) {
       lastError = decorateLookupAttempt(error, attempt);
+      attempts.push(attemptRecord({ attempt, startedAt, lookupMode: LOOKUP_MODE_SITE_FALLBACK, error: lastError }));
+      lastError.attempts = [...attempts];
+      await onProgress?.({ type: "attempt-result", key, ...attempts[attempts.length - 1] });
 
       if (!lastError.retryable || attempt === MAX_ATTEMPTS_PER_KEY) {
         break;

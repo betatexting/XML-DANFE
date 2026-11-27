@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu · Consulta DANFE</title>
+    <link rel="stylesheet" href="/login.css" />
+    <link rel="stylesheet" href="/menu.css" />
+    <link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script>
+    <script src="/menu.js" defer></script>
+  </head>
+  <body>
+    <main class="login-scene menu-scene" aria-label="Menu do Consulta DANFE">
+      <section class="login-panel menu-panel" aria-label="Funcionalidades">
+        <div class="login-panel__pink" aria-hidden="true"></div>
+        <div class="login-panel__cyan" aria-hidden="true"></div>
+        <div class="login-panel__surface" aria-hidden="true"></div>
+        <div class="login-window-actions" hidden>
+          <button class="screen-back-button" data-back-target="/login" type="button" aria-label="Voltar" title="Voltar">←</button>
+          <button id="menuMinimize" data-native-window-control type="button" aria-label="Minimizar">−</button>
+          <button id="menuClose" data-native-window-control type="button" aria-label="Fechar">×</button>
+        </div>
+        <nav class="menu-options" aria-label="Escolha uma funcionalidade">
+          <button id="manualNotesButton" class="menu-option" type="button">Notas Manuais</button>
+          <button id="automaticNotesButton" class="menu-option" type="button">Notas Automáticas</button>
+          <button id="keySheetsButton" class="menu-option" type="button">Planilhas de Chaves</button>
+        </nav>
+      </section>
+    </main>
+  </body>
+</html>

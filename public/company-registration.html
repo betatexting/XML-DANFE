@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cadastrar empresa · Consulta DANFE</title>
+    <link rel="stylesheet" href="/login.css" />
+    <link rel="stylesheet" href="/company-registration.css" />
+    <link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script>
+    <script src="/document-validation.js" defer></script>
+    <script src="/company-registration.js" defer></script>
+  </head>
+  <body>
+    <main class="login-scene registration-scene" aria-label="Cadastro de empresas">
+      <section class="login-panel registration-panel" aria-label="Cadastrar empresa">
+        <div class="login-panel__pink" aria-hidden="true"></div>
+        <div class="login-panel__cyan" aria-hidden="true"></div>
+        <div class="login-panel__surface" aria-hidden="true"></div>
+        <div class="login-window-actions registration-window-actions">
+          <button id="registrationBack" type="button" aria-label="Voltar" title="Fechar cadastro">←</button>
+          <button id="registrationMinimize" type="button" aria-label="Minimizar">−</button>
+          <button id="registrationClose" type="button" aria-label="Fechar">×</button>
+        </div>
+        <div class="registration-scroll">
+          <form id="companyRegistrationForm" class="registration-form" autocomplete="off">
+            <h1>Cadastrar empresa</h1>
+            <label class="registration-field registration-code" for="companyCode">Código <span>(opcional)</span>
+              <input id="companyCode" name="code" maxlength="80" />
+            </label>
+            <label class="registration-field registration-name" for="companyLegalName">Razão Social <span>*</span>
+              <input id="companyLegalName" name="legalName" maxlength="200" required autofocus />
+            </label>
+            <div class="registration-document">
+              <label class="registration-field" for="companyDocumentType">Tipo de documento <span>*</span>
+                <select id="companyDocumentType" name="documentType" required>
+                  <option value="cnpj">C.N.P.J.</option><option value="cpf">C.P.F.</option><option value="cei">C.E.I.</option><option value="caepf">C.A.E.P.F.</option>
+                </select>
+              </label>
+              <label class="registration-field" for="companyDocument">Documento <span>*</span>
+                <input id="companyDocument" name="document" maxlength="32" required aria-describedby="documentHint documentValidationMessage" />
+              </label>
+              <p id="documentHint">Informe o número do documento selecionado.</p>
+              <p id="documentValidationMessage" class="document-validation-message" role="status" aria-live="polite"></p>
+            </div>
+            <label class="registration-field registration-wide" for="companyStateRegistration">Inscrição Estadual <span>(opcional)</span>
+              <input id="companyStateRegistration" name="stateRegistration" maxlength="80" />
+            </label>
+            <label class="registration-wide"><input id="companyNfseProxy" type="checkbox"> Cadastrar também como procurador de NFS-e</label>
+            <p class="registration-section registration-wide">Acesso ao portal SEFAZ</p>
+            <label class="registration-field" for="companyPortalLogin">Login <span>*</span>
+              <input id="companyPortalLogin" name="portalLogin" maxlength="200" required autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="registration-field" for="companyPortalPassword">Senha <span>*</span>
+              <input id="companyPortalPassword" name="portalPassword" type="password" maxlength="512" required autocomplete="new-password" />
+            </label>
+            <p class="registration-hint registration-wide">O login e a senha SEFAZ podem ficar em branco em cadastros exclusivos de procurador. Para consultar por procuração, importe o A1 do titular.</p>
+            <p class="registration-section registration-wide">Certificado digital A1 <span>(opcional)</span></p>
+            <div class="registration-certificate registration-wide">
+              <div class="registration-certificate-actions">
+                <button id="registrationImportCertificate" type="button">Importar certificado</button>
+                <button id="registrationRemoveCertificate" type="button" disabled>Remover</button>
+              </div>
+              <p id="registrationCertificateFile" role="status">Nenhum certificado selecionado.</p>
+              <label class="registration-field" for="companyCertificatePassword">Senha do certificado
+                <input id="companyCertificatePassword" name="certificatePassword" type="password" maxlength="512" autocomplete="new-password" disabled />
+              </label>
+              <p class="registration-hint">Arquivo .pfx ou .p12. O certificado e sua senha serão armazenados com proteção do Windows para uso nas futuras buscas periódicas.</p>
+            </div>
+            <p id="registrationMessage" class="registration-message registration-wide" role="status" aria-live="polite"></p>
+            <div class="registration-actions registration-wide">
+              <button id="registrationCancel" type="button">Fechar</button>
+              <button id="registrationSave" type="submit">Salvar empresa</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

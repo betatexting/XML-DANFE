@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notas Automáticas · Consulta DANFE</title>
+    <link rel="stylesheet" href="/login.css" />
+    <link rel="stylesheet" href="/automatic-notes.css" />
+    <link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script>
+    <script src="/automatic-notes.js" type="module"></script>
+  </head>
+  <body>
+    <main class="login-scene automatic-notes-scene" aria-label="Notas Automáticas">
+      <section class="login-panel automatic-notes-panel" aria-label="Área de notas automáticas">
+        <div class="login-panel__pink" aria-hidden="true"></div>
+        <div class="login-panel__cyan" aria-hidden="true"></div>
+        <div class="login-panel__surface" aria-hidden="true"></div>
+        <div class="login-window-actions" hidden>
+          <button class="screen-back-button" data-back-target="/menu" type="button" aria-label="Voltar" title="Voltar">←</button>
+          <button id="automaticNotesMinimize" data-native-window-control type="button" aria-label="Minimizar">−</button>
+          <button id="automaticNotesClose" data-native-window-control type="button" aria-label="Fechar">×</button>
+        </div>
+        <div id="automaticNotesContent" class="automatic-notes-content">
+          <nav class="automatic-notes-tools" aria-label="Ferramentas de notas automáticas">
+            <div id="companyToolGroup" class="company-tool-group">
+              <button id="companyToolButton" class="automatic-notes-tool" type="button" aria-label="Empresas" aria-expanded="false" aria-controls="companyPopover">
+                <img src="/assets/automatic-notes/companies.png" alt="" width="45" height="42" draggable="false" />
+              </button>
+              <div class="company-hover-bridge" aria-hidden="true"></div>
+              <section id="companyPopover" class="company-popover" aria-label="Seletor de empresas" hidden>
+                <div class="company-select">
+                  <button id="companySelectButton" class="company-select-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="companyOptions">
+                    <span id="companySelectLabel">Carregando empresas…</span>
+                    <span class="company-select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div id="companyDropdown" class="company-dropdown" hidden>
+                    <div id="companyOptions" class="company-options" role="listbox" aria-label="Empresas cadastradas"></div>
+                    <button id="createCompanyButton" class="company-create-button" type="button">Cadastrar empresa</button>
+                  </div>
+                </div>
+                <div class="company-modules" aria-label="Funcionalidades da empresa">
+                  <button class="company-module" data-company-module="chaves" type="button" disabled>Chaves</button>
+                  <button class="company-module" data-company-module="cte" type="button" disabled>CT-e</button>
+                  <button class="company-module" data-company-module="mdf" type="button" disabled>MDF-e</button>
+                </div>
+                <p id="companySelectorMessage" class="company-selector-message" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+            <div id="calendarToolGroup" class="calendar-tool-group">
+              <button id="calendarToolButton" class="automatic-notes-tool" type="button" aria-label="Calendário" aria-expanded="false" aria-controls="calendar_period_selector">
+                <img src="/assets/automatic-notes/calendar.png" alt="" width="45" height="49" draggable="false" />
+              </button>
+              <div class="calendar-hover-bridge" aria-hidden="true"></div>
+              <section id="calendar_period_selector" class="company-popover calendar-popover" aria-label="Seletor de calendário" hidden>
+                <div class="calendar-weekdays" aria-label="Dias da semana">
+                  <span title="Domingo">D</span><span title="Segunda-feira">S</span><span title="Terça-feira">T</span><span title="Quarta-feira">Q</span><span title="Quinta-feira">Q</span><span title="Sexta-feira">S</span><span title="Sábado">S</span>
+                </div>
+                <div id="calendarDays" class="calendar-days" role="group" aria-label="Datas do mês"></div>
+                <div class="calendar-footer">
+                  <div id="calendarMonthSelect" class="calendar-dropdown">
+                    <button class="calendar-select-button" type="button" aria-label="Mês" aria-haspopup="listbox" aria-expanded="false" aria-controls="calendarMonthOptions"></button>
+                    <div id="calendarMonthOptions" class="calendar-select-options" role="listbox" aria-label="Meses" hidden></div>
+                  </div>
+                  <div id="calendarYearSelect" class="calendar-dropdown">
+                    <button class="calendar-select-button" type="button" aria-label="Ano" aria-haspopup="listbox" aria-expanded="false" aria-controls="calendarYearOptions"></button>
+                    <div id="calendarYearOptions" class="calendar-select-options" role="listbox" aria-label="Anos" hidden></div>
+                  </div>
+                  <button id="calendarSearchButton" class="calendar-search-button" type="button">Buscar</button>
+                </div>
+                <p id="calendarPeriodMessage" class="calendar-period-message" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+            <div id="noteToolGroup" class="note-tool-group">
+              <button id="noteToolButton" class="automatic-notes-tool" type="button" aria-label="Filtro de notas" aria-expanded="false" aria-controls="notePopover">
+                <img src="/assets/automatic-notes/invoice-filter.png" alt="" width="45" height="56" draggable="false" />
+              </button>
+              <div class="note-hover-bridge" aria-hidden="true"></div>
+              <section id="notePopover" class="company-popover note-popover" aria-label="Seletor de notas" hidden>
+                <div class="company-select">
+                  <button id="noteSelectButton" class="company-select-button" type="button" aria-label="Empresa das notas" aria-haspopup="listbox" aria-expanded="false" aria-controls="noteOptions">
+                    <span id="noteSelectLabel">Carregando empresas…</span><span class="company-select-caret" aria-hidden="true"></span>
+                  </button>
+                  <div id="noteDropdown" class="company-dropdown" hidden>
+                    <div id="noteOptions" class="company-options" role="listbox" aria-label="Empresas cadastradas"></div>
+                  </div>
+                </div>
+                <div class="company-modules" aria-label="Tipos de notas">
+                  <button class="company-module" data-note-type="nfe" type="button" aria-disabled="true">NF-e</button>
+                  <button class="company-module" data-note-type="nfs" type="button" aria-disabled="true">NFS-e</button>
+                  <button class="company-module" data-note-type="nfc" type="button" aria-disabled="true">NFC</button>
+                </div>
+                <p id="noteSelectorMessage" class="company-selector-message" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+          </nav>
+          <section id="mdfeQueries" class="fiscal-query-panel" aria-labelledby="mdfeTitle" hidden>
+            <header class="mdfe-heading">
+              <div><h1 id="mdfeTitle" tabindex="-1">Manifestos MDF-e</h1><p id="mdfeCompany"></p></div>
+              <button class="company-module" type="button" data-mdfe-query="download">Verificar Download XML na SVRS</button>
+            </header>
+            <div class="mdfe-actions">
+              <button class="company-module" type="button" data-mdfe-query="open">Não encerrados</button>
+              <button class="company-module" type="button" data-mdfe-query="status">Disponibilidade da SVRS</button>
+              <button id="mdfeExportKeys" class="company-module" type="button" disabled>Baixar chaves encontradas</button>
+            </div>
+            <form id="mdfeSituation" class="mdfe-key-form">
+              <label for="mdfeKey">Chave de MDF-e próprio</label>
+              <input id="mdfeKey" inputmode="numeric" pattern="[0-9]{44}" maxlength="44" required>
+              <button class="company-module" type="submit">Consultar situação</button>
+              <button class="company-module" type="submit" value="xml">Baixar XML</button>
+            </form>
+            <form id="mdfeArchiveForm" class="mdfe-key-form">
+              <label for="mdfeArchiveMonth">Competência do acervo local</label>
+              <input id="mdfeArchiveMonth" type="month" required>
+              <button class="company-module" type="submit" value="zip">Baixar XMLs salvos</button>
+              <button class="company-module" type="submit" value="keys">Baixar chaves salvas</button>
+            </form>
+            <p id="mdfeArchiveMessage" class="mdfe-message" role="status"></p>
+            <label class="mdfe-filter" for="mdfeFilter">Filtrar resultados
+              <input id="mdfeFilter" type="search" placeholder="Chave, situação ou protocolo">
+            </label>
+            <p id="mdfeServiceMessage" class="mdfe-message" role="status"></p>
+            <p id="mdfeDownloadMessage" class="mdfe-message" role="status"></p>
+            <p id="mdfeMessage" class="mdfe-message" role="status">Selecione uma consulta para ver os manifestos.</p>
+            <div class="mdfe-table-scroll" tabindex="0" role="region" aria-label="Resultados de MDF-e">
+              <table aria-label="Manifestos MDF-e">
+                <thead><tr><th scope="col">Chave de acesso</th><th scope="col">Situação</th><th scope="col">Protocolo</th><th scope="col">Eventos</th></tr></thead>
+                <tbody id="mdfeResults"></tbody>
+              </table>
+            </div>
+          </section>
+          <section id="nfseQueries" class="fiscal-query-panel" aria-labelledby="nfseTitle" hidden>
+            <header class="mdfe-heading">
+              <div><h1 id="nfseTitle" tabindex="-1">NFS-e Nacional</h1><p id="nfseCompany"></p></div>
+              <button id="nfseRegisterProxy" class="company-module" type="button">Cadastrar procurador</button>
+            </header>
+            <table aria-label="Certificado da empresa">
+              <thead><tr><th scope="col">Certificado próprio</th><th scope="col">Vencimento</th></tr></thead>
+              <tbody><tr><td id="nfseCertificateStatus">—</td><td id="nfseCertificateExpiry">—</td></tr></tbody>
+            </table>
+            <form id="nfseForm" class="nfse-form">
+              <label for="nfseAuth">Forma de acesso
+                <select id="nfseAuth"><option value="own">Certificado próprio</option><option value="proxy">Via procuração</option></select>
+              </label>
+              <label id="nfseProxyField" for="nfseProxy" hidden>Procurador
+                <select id="nfseProxy" aria-label="Procurador"></select>
+              </label>
+              <label for="nfseNsu">Último NSU
+                <input id="nfseNsu" inputmode="numeric" pattern="[0-9]{1,15}" maxlength="15" value="0" required>
+              </label>
+              <button class="company-module" type="submit">Consultar NFS-e</button>
+              <button id="nfseNext" class="company-module" type="button" hidden>Consultar próximo lote</button>
+            </form>
+            <p id="nfseMessage" class="mdfe-message" role="status"></p>
+            <form id="nfseArchiveForm" class="nfse-form">
+              <label>Mês de emissão dos XMLs (opcional)<input id="nfseArchiveMonth" type="month"></label>
+              <button class="company-module" type="submit">Baixar XMLs de NFS-e (ZIP)</button>
+            </form>
+            <p id="nfseArchiveMessage" class="mdfe-message" role="status"></p>
+            <div class="mdfe-table-scroll" tabindex="0" role="region" aria-label="Resultados de NFS-e">
+              <table aria-label="Documentos da NFS-e">
+                <thead><tr><th scope="col">NSU</th><th scope="col">Tipo</th><th scope="col">Chave de acesso</th><th scope="col">Evento</th></tr></thead>
+                <tbody id="nfseResults"></tbody>
+              </table>
+            </div>
+          </section>
+          <section id="cteQueries" class="fiscal-query-panel" aria-labelledby="cteTitle" hidden>
+            <header class="mdfe-heading">
+              <div><h1 id="cteTitle" tabindex="-1">CT-e recebidos</h1><p id="cteCompany"></p></div>
+              <button id="cteCollect" class="company-module" type="button">Consultar CT-e</button>
+            </header>
+            <div class="nfse-form">
+              <label for="cteRole">Papel da empresa
+                <select id="cteRole">
+                  <option value="">Todos os papéis</option>
+                  <option value="tomadora">Tomadora</option>
+                  <option value="remetente">Remetente</option>
+                  <option value="destinataria">Destinatária</option>
+                </select>
+              </label>
+              <label for="cteMonth">Mês de emissão
+                <select id="cteMonth" aria-label="Mês de emissão"><option value="">Todos os meses</option></select>
+              </label>
+              <button id="cteDownloadBatch" class="company-module" type="button" disabled>Baixar XMLs filtrados (ZIP)</button>
+            </div>
+            <p id="cteMessage" class="mdfe-message" role="status"></p>
+            <div class="mdfe-table-scroll" tabindex="0" role="region" aria-label="Resultados de CT-e">
+              <table aria-label="CT-e recebidos">
+                <thead><tr><th scope="col">Chave de acesso</th><th scope="col">Emitente</th><th scope="col">Emissão</th><th scope="col">Papéis</th><th scope="col">Arquivo</th></tr></thead>
+                <tbody id="cteResults"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

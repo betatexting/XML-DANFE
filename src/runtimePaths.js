@@ -31,7 +31,17 @@ async function resolveUserDataDir() {
   return uniqueCandidates.at(-1);
 }
 
+function getFiscalDownloadsDir() {
+  let downloads = path.join(os.homedir(), "Downloads");
+  try {
+    const { app } = require("electron");
+    if (app?.isReady()) downloads = app.getPath("downloads");
+  } catch { /* Standalone server uses the conventional user Downloads folder. */ }
+  return path.join(downloads, "Notas Fiscais");
+}
+
 module.exports = {
+  getFiscalDownloadsDir,
   getUserDataDir,
   resolveUserDataDir
 };

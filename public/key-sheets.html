@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planilhas de Chaves · Consulta DANFE</title>
+    <link rel="stylesheet" href="/login.css" /><link rel="stylesheet" href="/key-sheets.css" /><link rel="stylesheet" href="/window-ui.css" />
+    <script src="/window-ui.js" defer></script><script src="/key-sheets.js" type="module"></script>
+  </head>
+  <body>
+    <main class="login-scene sheets-scene">
+      <section class="login-panel sheets-panel" aria-label="Planilhas de Chaves">
+        <div class="login-panel__pink" aria-hidden="true"></div><div class="login-panel__cyan" aria-hidden="true"></div><div class="login-panel__surface" aria-hidden="true"></div>
+        <div class="login-window-actions screen-navigation">
+          <button class="screen-back-button" data-back-target="/menu" type="button" aria-label="Voltar">←</button>
+          <button id="sheetsMinimize" data-native-window-control type="button" aria-label="Minimizar">−</button><button id="sheetsClose" data-native-window-control type="button" aria-label="Fechar">×</button>
+        </div>
+        <div class="sheets-content">
+          <h1>Planilhas de Chaves</h1>
+          <form id="sheetFilters" class="sheet-filters">
+            <label>Empresa<select id="sheetCompany" required aria-label="Empresa"><option value="">Carregando empresas…</option></select></label>
+            <label>De<input id="sheetFrom" type="date" required aria-label="Data inicial" /></label>
+            <label>Até<input id="sheetTo" type="date" required aria-label="Data final" /></label>
+            <button type="submit">Atualizar lista</button>
+          </form>
+          <details id="sheetFiscalExport">
+            <summary>Baixar XMLs em lote</summary>
+            <form id="sheetFiscalForm" class="sheet-filters">
+              <label>Tipo de documento<select id="sheetFiscalType">
+                <option value="all">Todos os tipos</option><option value="nfe">NF-e</option><option value="nfce">NFC-e</option>
+                <option value="nfse">NFS-e</option><option value="cte">CT-e</option><option value="mdfe">MDF-e</option>
+              </select></label>
+              <label>Mês de emissão (opcional)<input id="sheetFiscalMonth" type="month"></label>
+              <button type="submit">Baixar ZIP</button>
+            </form>
+            <p id="sheetFiscalMessage" role="status"></p>
+          </details>
+          <details id="sheetCte">
+            <summary>Chaves de CT-e</summary>
+            <div class="sheet-filters">
+              <label>Chaves coletadas da empresa<select id="sheetCteSaved" aria-label="Chaves de CT-e coletadas"><option value="">Selecione uma chave</option></select></label>
+              <button id="sheetCteCollect" type="button" disabled>Buscar chaves de CT-e</button>
+            </div>
+            <form id="sheetCteForm" class="sheet-filters">
+              <label>Chave de acesso do CT-e<input id="sheetCteKey" type="text" inputmode="numeric" required aria-label="Chave de acesso do CT-e"></label>
+              <button type="submit" disabled>Consultar CT-e por chave</button>
+            </form>
+            <div id="sheetCteFeedback" class="sheet-cte-feedback" role="status" aria-atomic="true" hidden>
+              <span id="sheetCteStatus" class="sheet-cte-status"></span>
+              <p id="sheetCteMessage"></p>
+            </div>
+            <a id="sheetCteXml" download hidden>Baixar XML coletado</a>
+            <ul id="sheetCteEvents" aria-label="Eventos do CT-e" hidden></ul>
+          </details>
+          <p class="sheets-hint">Período de autorização da NF-e. Exibimos somente planilhas da empresa selecionada, inteiramente contidas neste período.</p>
+          <div class="sheets-actions"><label>Coletar<select id="sheetDirection" aria-label="Tipo de coleta"><option value="both">Entradas e saídas</option><option value="entradas">Entradas</option><option value="saidas">Saídas</option></select></label><label><input id="includeMdfeEvents" type="checkbox"> Incluir eventos de MDF-e vinculados</label><button id="collectSheets" type="button" disabled>Buscar planilhas de NF-e na SEFAZ</button><button id="cancelCollection" type="button" hidden>Cancelar coleta</button></div>
+          <div id="sheetCollectionFeedback" class="sheet-cte-feedback" role="status" aria-atomic="true" hidden>
+            <span id="sheetCollectionStatus" class="sheet-cte-status"></span>
+            <p id="sheetMessage"></p>
+          </div>
+          <div id="sheetChallenge" class="sheet-challenge" hidden>
+            <p>O portal solicitou o código da imagem para continuar.</p><img id="sheetCaptchaImage" alt="Código solicitado pelo portal SEFAZ" />
+            <label>Código da imagem<input id="sheetCaptchaAnswer" maxlength="16" autocomplete="off" spellcheck="false" /></label><button id="sheetCaptchaSubmit" type="button">Confirmar código</button>
+          </div>
+          <h2>Planilhas importadas</h2><div id="sheetList" class="sheet-list" aria-live="polite"></div>
+          <details id="sheetPreview" hidden><summary>Chaves da planilha selecionada</summary><p id="sheetPreviewMessage"></p><textarea id="sheetKeys" readonly aria-label="Chaves importadas"></textarea></details>
+          <h2>Últimas coletas do período</h2><div id="sheetJobs" class="sheet-list"></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

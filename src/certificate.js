@@ -110,7 +110,7 @@ function getStateFromSubject(subject) {
   return match?.[1]?.trim() || "";
 }
 
-function inspectCertificate({ pfx, passphrase = "" }) {
+function inspectCertificate({ pfx, passphrase = "", requireCnpj = true }) {
   if (!Buffer.isBuffer(pfx) || pfx.length === 0) {
     throw new CertificateError("Selecione um certificado A1 valido em formato .pfx ou .p12.");
   }
@@ -156,7 +156,7 @@ function inspectCertificate({ pfx, passphrase = "" }) {
   }
 
   const cnpj = readCnpjExtension(rawCertificate);
-  if (!cnpj) {
+  if (!cnpj && requireCnpj) {
     throw new CertificateError(
       "O certificado nao possui um CNPJ na extensao exigida pela SEFAZ. Selecione um e-CNPJ A1 valido.",
       "certificado_sem_cnpj"

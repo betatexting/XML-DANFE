@@ -1,0 +1,17 @@
+.screen-navigation { opacity: 1; }
+.screen-back-button { -webkit-app-region: no-drag; display: inline-grid; place-items: center; width: 32px; height: 30px; padding: 4px 8px; border: 0; background: transparent; color: #858585; font: 22px/1 Consolas, monospace; cursor: pointer; box-shadow: none; }
+.screen-back-button:hover { color: #fb275d; }
+.screen-back-button:focus-visible { outline: 2px solid #fb275d; outline-offset: 2px; }
+.standalone-screen-back { position: fixed; top: 10px; right: 14px; z-index: 100; }
+[data-native-window-control][hidden] { display: none; }
+.window-resize-layer { position: absolute; inset: 0; z-index: 80; pointer-events: none; }
+.window-resize-handle { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-app-region: no-drag; }
+.window-resize-handle[data-edge="n"] { left: 12px; right: 12px; top: -5px; height: 10px; cursor: n-resize; }
+.window-resize-handle[data-edge="s"] { left: 12px; right: 12px; bottom: -5px; height: 10px; cursor: s-resize; }
+.window-resize-handle[data-edge="w"] { left: -5px; top: 12px; bottom: 12px; width: 10px; cursor: w-resize; }
+.window-resize-handle[data-edge="e"] { right: -5px; top: 12px; bottom: 12px; width: 10px; cursor: e-resize; }
+.window-resize-handle[data-edge="nw"], .window-resize-handle[data-edge="ne"], .window-resize-handle[data-edge="sw"], .window-resize-handle[data-edge="se"] { width: 16px; height: 16px; }
+.window-resize-handle[data-edge="nw"] { left: -7px; top: -7px; cursor: nw-resize; }
+.window-resize-handle[data-edge="ne"] { right: -7px; top: -7px; cursor: ne-resize; }
+.window-resize-handle[data-edge="sw"] { left: -7px; bottom: -7px; cursor: sw-resize; }
+.window-resize-handle[data-edge="se"] { right: -7px; bottom: -7px; cursor: se-resize; }

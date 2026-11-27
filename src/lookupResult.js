@@ -77,6 +77,7 @@ function createLookupErrorResult({
   return {
     key,
     status: "error",
+    attempts: Array.isArray(error?.attempts) ? error.attempts : [],
     message: formatLookupFailureMessage(normalizedError),
     errorCode: normalizedError.errorCode || "",
     httpStatus: normalizedError.httpStatus || null,
@@ -93,7 +94,13 @@ function createLookupErrorResult({
 function isFallbackEligibleResult(result) {
   return (
     result?.status === "error" &&
+    result?.errorCode !== "xml_organization_failed" &&
     result?.lookupMode !== LOOKUP_MODE_SITE_FALLBACK &&
+    result?.lookupMode !== "input-validation" &&
+    result?.httpStatus !== 429 &&
+    result?.httpStatus !== 202 &&
+    !["chave_invalida", "dv_invalido", "tipo_nao_suportado"].includes(result?.errorCode) &&
+    result?.errorCode !== "api_cooldown" &&
     typeof result?.key === "string" &&
     /^\d{44}$/.test(result.key)
   );

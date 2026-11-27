@@ -68,16 +68,20 @@ test("server uses local XML before all processors and requests only missing keys
   t.mock.method(pdfModule, "extractCandidatesFromPdfFiles", async () => [{ key, sourceType: "pdf", sourceName: "nota.pdf", status: "pending" }]);
   const { storeCertificate } = require("../src/certificateSession");
   const { app } = require("../server");
+  const authCookie = await require("./helpers/auth").authenticateTestApp(app, directory);
   const server = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => server.once("listening", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const originalFetch = global.fetch;
+  const todayParts = Object.fromEntries(new Intl.DateTimeFormat("en", { timeZone: "America/Sao_Paulo", year: "2-digit", month: "2-digit" })
+    .formatToParts(new Date()).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const currentKey = otherKey.slice(0, 2) + todayParts.year + todayParts.month + otherKey.slice(6);
   let externalRequests = 0;
   t.mock.method(global, "fetch", async (url, options) => {
     if (String(url).startsWith("http://127.0.0.1:")) return originalFetch(url, options);
     externalRequests += 1;
-    assert.equal(JSON.parse(options.body).chave, otherKey);
-    return new Response(JSON.stringify({ error: "pendente" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    assert.equal(JSON.parse(options.body).chave, currentKey);
+    return new Response(JSON.stringify({ error: "chave_invalida" }), { status: 400, headers: { "Content-Type": "application/json" } });
   });
   const https = require("node:https");
   t.mock.method(https, "request", () => { assert.fail("Local XML must not query SEFAZ"); });
@@ -86,7 +90,7 @@ test("server uses local XML before all processors and requests only missing keys
   const base = `http://127.0.0.1:${server.address().port}`;
   const org = { type: "entradas", cnpj: company };
   async function results(endpoint, body) {
-    const response = await fetch(`${base}${endpoint}`, { method: "POST", headers: body instanceof FormData ? {} : { "Content-Type": "application/json" }, body: body instanceof FormData ? body : JSON.stringify(body) });
+    const response = await fetch(`${base}${endpoint}`, { method: "POST", headers: { Cookie: authCookie, ...(body instanceof FormData ? {} : { "Content-Type": "application/json" }) }, body: body instanceof FormData ? body : JSON.stringify(body) });
     assert.equal(response.status, 200);
     const events = (await response.text()).trim().split("\n").map(JSON.parse);
     return events.filter((event) => event.type === "result").map((event) => event.result);
@@ -121,8 +125,8 @@ test("server uses local XML before all processors and requests only missing keys
     assert.equal(found[0].alreadyAvailable, true);
   }
   assert.equal(externalRequests, 0);
-  const mixed = await results("/api/process", { rawKeys: `${key}\n${otherKey}`, organization: org });
+  const mixed = await results("/api/process", { rawKeys: `${key}\n${currentKey}`, organization: org });
   assert.equal(mixed.find((result) => result.key === key).alreadyAvailable, true);
-  assert.equal(mixed.find((result) => result.key === otherKey).status, "error");
+  assert.equal(mixed.find((result) => result.key === currentKey).status, "error");
   assert.equal(externalRequests, 1);
 });

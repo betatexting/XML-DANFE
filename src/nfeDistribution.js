@@ -1,5 +1,7 @@
 const https = require("https");
-const { getCertificateOrganization, saveOrganizedXml } = require("./xmlStorage");
+const { classifyXml, getCertificateOrganization, saveOrganizedXml } = require("./xmlStorage");
+const { planCompanyBatch } = require("./companyBatch");
+const { certificateQuota } = require("./certificateQuota");
 const zlib = require("zlib");
 const { promisify } = require("util");
 const { getIssueDateFromXml } = require("./accessKeys");
@@ -383,7 +385,7 @@ async function extractCompleteXml(responseXml) {
   return (await extractCompleteDocument(responseXml)).xml;
 }
 
-async function downloadForKey({ key, downloadsDir, organization, certificate, onProgress }) {
+async function downloadForKey({ key, downloadsDir, organization, certificate, interestedCnpj, onProgress, soapRequest = requestSoap }) {
   if (typeof onProgress === "function") {
     await onProgress({
       type: "attempt",
@@ -396,17 +398,25 @@ async function downloadForKey({ key, downloadsDir, organization, certificate, on
 
   const envelope = buildDistributionEnvelope({
     key,
-    cnpj: certificate.cnpj,
+    cnpj: interestedCnpj,
     authorUfCode: certificate.authorUfCode
   });
-  const responseXml = await requestSoap({
+  const responseXml = await soapRequest({
     body: envelope,
     certificate,
     queryType: "consChNFe"
   });
   const document = await extractCompleteDocument(responseXml);
   const xml = document.xml;
-  const targetFile = await saveOrganizedXml(xml, key, downloadsDir, organization);
+  let targetFile;
+  try { targetFile = await saveOrganizedXml(xml, key, downloadsDir, organization); }
+  catch (error) {
+    error.lookupMode = LOOKUP_MODE_CERTIFICATE;
+    error.sefaz = createSefazTrace({ queryType: "consChNFe", submitted: true, cStat: document.cStat, xMotivo: document.xMotivo });
+    throw error;
+  }
+  const company = classifyXml(xml, key, organization);
+  if (Array.isArray(certificate.companyCnpjs) && !certificate.companyCnpjs.includes(company.cnpj)) certificate.companyCnpjs.push(company.cnpj);
 
   return {
     ...createLookupSuccessResult({
@@ -416,6 +426,9 @@ async function downloadForKey({ key, downloadsDir, organization, certificate, on
       attemptCount: 1
     }),
     documentIssueDate: getIssueDateFromXml(xml),
+    companyCnpj: company.cnpj,
+    invoiceType: company.type,
+    interestedCnpj,
     sefaz: createSefazTrace({
       queryType: "consChNFe",
       submitted: true,
@@ -447,37 +460,66 @@ function createDeferredPointLookupResult(key) {
   return result;
 }
 
-async function processAccessKeysWithCertificate({
+async function processCertificateIncomingKeys({
   keys,
   downloadsDir,
   organization,
   certificate,
   onResult,
-  onProgress
+  onProgress,
+  soapRequest = requestSoap,
+  quota = soapRequest === requestSoap ? certificateQuota : null
 }) {
   organization = getCertificateOrganization(certificate);
   const results = [];
   let shouldUseNsuFallback = false;
+  let requestCount = 0;
+  planCompanyBatch(keys, certificate);
 
   for (const [index, key] of keys.entries()) {
     let result;
 
-    if (shouldUseNsuFallback || index >= MAX_CERTIFICATE_POINT_LOOKUPS) {
+    if (shouldUseNsuFallback || requestCount >= MAX_CERTIFICATE_POINT_LOOKUPS) {
       result = createDeferredPointLookupResult(key);
     } else {
       try {
-        result = await downloadForKey({
-          key,
-          downloadsDir,
-          organization,
-          certificate,
-          onProgress: (progress) =>
-            onProgress?.(progress, {
-              sourceIndex: index,
-              total: keys.length
-            })
-        });
-        result.downloadMethod = "certificate-key";
+        const targets = planCompanyBatch(keys, certificate).targetsFor(key);
+        const attempts = [];
+        for (const interestedCnpj of targets) {
+          if (requestCount >= MAX_CERTIFICATE_POINT_LOOKUPS) { result = createDeferredPointLookupResult(key); break; }
+          if (quota && !(await quota.acquire(certificate.cnpj))) {
+            shouldUseNsuFallback = true;
+            result = createDeferredPointLookupResult(key);
+            break;
+          }
+          requestCount++;
+          try {
+            result = await downloadForKey({
+              key,
+              downloadsDir,
+              organization,
+              certificate,
+              interestedCnpj,
+              soapRequest,
+              onProgress: (progress) =>
+                onProgress?.(progress, {
+                  sourceIndex: index,
+                  total: keys.length
+                })
+            });
+            attempts.push({ interestedCnpj, status: "success" });
+            break;
+          } catch (error) {
+            attempts.push({ interestedCnpj, status: "error", errorCode: error.errorCode || "", message: error.message });
+            if (error.errorCode !== "certificado_sem_autorizacao" || interestedCnpj === targets.at(-1)) {
+              error.attempts = attempts;
+              throw error;
+            }
+          }
+        }
+        result.attempts = attempts;
+        if (attempts.some((a) => a.status === "error")) result.initialError = attempts.find((a) => a.status === "error");
+        if (result.status === "success") result.downloadMethod = "certificate-key";
       } catch (error) {
         result = createLookupErrorResult({
           key,
@@ -488,6 +530,7 @@ async function processAccessKeysWithCertificate({
 
       if (result.errorCode === "sefaz_656") {
         shouldUseNsuFallback = true;
+        if (quota) await quota.block(certificate.cnpj);
       }
     }
 
@@ -503,6 +546,40 @@ async function processAccessKeysWithCertificate({
   }
 
   return results;
+}
+
+function isOwnIssuedKey(key, certificate) {
+  return /^\d{44}$/.test(key) && key.slice(6, 14) === certificate.cnpj.slice(0, 8);
+}
+
+async function processAccessKeysWithCertificate(options) {
+  const { keys, certificate } = options;
+  planCompanyBatch(keys, certificate);
+  const ownKeys = keys.filter((key) => isOwnIssuedKey(key, certificate));
+  const incomingKeys = keys.filter((key) => !isOwnIssuedKey(key, certificate));
+  const results = new Map();
+  const indexes = new Map(keys.map((key, index) => [key, index]));
+  async function publish(result) {
+    if (results.has(result.key)) return;
+    results.set(result.key, result);
+    await options.onResult?.(result, { index: results.size - 1, sourceIndex: indexes.get(result.key), completed: results.size, total: keys.length });
+  }
+  async function run(group, processor) {
+    if (!group.length) return;
+    const onProgress = (progress) => options.onProgress?.(progress, { sourceIndex: indexes.get(progress.key), total: keys.length });
+    try {
+      const batch = await processor({ ...options, keys: group, organization: getCertificateOrganization(certificate), onResult: publish, onProgress });
+      for (const result of batch) await publish(result);
+    } catch (error) {
+      for (const key of group) if (!results.has(key)) await publish(createLookupErrorResult({ key, error, lookupMode: LOOKUP_MODE_CERTIFICATE }));
+    }
+  }
+  // DistDFe does not distribute NF-e XML to its own emitter. Do not spend its quota.
+  const ownProcessor = options.withoutCertificateProcessor || require("./lookupRouting").processRoutedKeys;
+  const incomingProcessor = incomingKeys.length > MAX_CERTIFICATE_POINT_LOOKUPS
+    ? (options.nsuProcessor || processAccessKeysWithNsuDistribution) : processCertificateIncomingKeys;
+  await Promise.all([run(ownKeys, ownProcessor), run(incomingKeys, incomingProcessor)]);
+  return keys.map((key) => results.get(key));
 }
 
 async function saveXmlForNsu({
@@ -521,6 +598,7 @@ async function saveXmlForNsu({
     return createLookupErrorResult({
       key,
       error: new LookupError(error.message, {
+        errorCode: error.errorCode || "xml_organization_failed",
         lookupMode: LOOKUP_MODE_CERTIFICATE_NSU,
         sefaz
       }),
@@ -536,6 +614,8 @@ async function saveXmlForNsu({
       attemptCount
     }),
     downloadMethod,
+    companyCnpj: classifyXml(xml, key, organization).cnpj,
+    invoiceType: classifyXml(xml, key, organization).type,
     documentIssueDate: getIssueDateFromXml(xml),
     sefaz
   };
@@ -563,19 +643,24 @@ function createNsuNotFoundResult(key, error = null, sefaz = null) {
   return result;
 }
 
-async function processAccessKeysWithNsuDistribution({
+async function processAccessKeysWithNsuForCompany({
   keys,
   downloadsDir,
   organization,
   certificate,
+  interestedCnpj,
+  maxBatches = keys.length > MAX_CERTIFICATE_POINT_LOOKUPS ? 100 : MAX_NSU_BATCHES_PER_FALLBACK,
+  soapRequest = requestSoap,
+  stateStore = { readCachedXml, getDistributionState, getLastNsu, deferNextNsuCheck, saveCachedXml, saveLastNsu },
   onProgress
 }) {
+  const { readCachedXml, getDistributionState, getLastNsu, deferNextNsuCheck, saveCachedXml, saveLastNsu } = stateStore;
   organization = getCertificateOrganization(certificate);
   const resultsByKey = new Map();
   const remainingKeys = new Set(keys);
 
   for (const key of keys) {
-    const cachedXml = await readCachedXml(certificate.cnpj, key);
+    const cachedXml = await readCachedXml(interestedCnpj, key);
     if (!cachedXml || !isCompleteNfeXml(cachedXml)) {
       continue;
     }
@@ -599,7 +684,7 @@ async function processAccessKeysWithNsuDistribution({
     remainingKeys.delete(key);
   }
 
-  const distributionState = await getDistributionState(certificate.cnpj);
+  const distributionState = await getDistributionState(interestedCnpj);
   const nsuTrace = {
     submitted: false,
     cStat: "",
@@ -637,11 +722,12 @@ async function processAccessKeysWithNsuDistribution({
     return keys.map((key) => resultsByKey.get(key) || createNsuNotFoundResult(key, waitError));
   }
 
-  let ultNsu = distributionState.ultNsu || (await getLastNsu(certificate.cnpj));
+  let ultNsu = distributionState.ultNsu || (await getLastNsu(interestedCnpj));
   let lastResponseError = null;
   let batchCount = 0;
+  const deadline = Date.now() + 90000;
 
-  while (remainingKeys.size > 0 && batchCount < MAX_NSU_BATCHES_PER_FALLBACK) {
+  while (remainingKeys.size > 0 && batchCount < maxBatches && Date.now() < deadline) {
     batchCount += 1;
 
     if (typeof onProgress === "function") {
@@ -656,12 +742,12 @@ async function processAccessKeysWithNsuDistribution({
     let response;
     try {
       const envelope = buildDistNsuEnvelope({
-        cnpj: certificate.cnpj,
+        cnpj: interestedCnpj,
         authorUfCode: certificate.authorUfCode,
         ultNsu
       });
       response = await parseDistributionResponse(
-        await requestSoap({
+        await soapRequest({
           body: envelope,
           certificate,
           lookupMode: LOOKUP_MODE_CERTIFICATE_NSU,
@@ -678,7 +764,7 @@ async function processAccessKeysWithNsuDistribution({
       nsuTrace.cStat = error?.sefaz?.cStat || "";
       nsuTrace.xMotivo = error?.sefaz?.xMotivo || error?.message || "";
       if (error?.errorCode === "sefaz_656") {
-        await deferNextNsuCheck(certificate.cnpj, {
+        await deferNextNsuCheck(interestedCnpj, {
           ultNsu,
           delayMs: NSU_RETRY_WAIT_MS
         });
@@ -695,7 +781,7 @@ async function processAccessKeysWithNsuDistribution({
     nsuTrace.maxNsu = response.maxNsu;
 
     if (response.cStat === "137") {
-      await deferNextNsuCheck(certificate.cnpj, {
+      await deferNextNsuCheck(interestedCnpj, {
         ultNsu: response.ultNsu,
         maxNsu: response.maxNsu,
         delayMs: NSU_RETRY_WAIT_MS
@@ -709,7 +795,7 @@ async function processAccessKeysWithNsuDistribution({
       }
 
       if (document.isComplete) {
-        await saveCachedXml(certificate.cnpj, document.key, document.xml);
+        await saveCachedXml(interestedCnpj, document.key, document.xml);
       }
 
       if (!remainingKeys.has(document.key)) {
@@ -758,15 +844,24 @@ async function processAccessKeysWithNsuDistribution({
       remainingKeys.delete(document.key);
     }
 
-    await saveLastNsu(certificate.cnpj, response.ultNsu, response.maxNsu);
+    await saveLastNsu(interestedCnpj, response.ultNsu, response.maxNsu);
 
     if (response.ultNsu === response.maxNsu || response.ultNsu === ultNsu) {
+      await deferNextNsuCheck(interestedCnpj, {
+        ultNsu: response.ultNsu, maxNsu: response.maxNsu, delayMs: NSU_RETRY_WAIT_MS
+      });
       break;
     }
 
     ultNsu = response.ultNsu;
   }
 
+  if (!lastResponseError && remainingKeys.size && nsuTrace.lastNsu < nsuTrace.maxNsu) {
+    lastResponseError = new LookupError(
+      "A varredura NSU foi parcial; a chave ainda nao foi encontrada nos lotes lidos. O cursor foi salvo para continuar depois.",
+      { lookupMode: LOOKUP_MODE_CERTIFICATE_NSU, errorCode: "nsu_varredura_parcial" }
+    );
+  }
   return keys.map(
     (key) =>
       resultsByKey.get(key) ||
@@ -777,10 +872,40 @@ async function processAccessKeysWithNsuDistribution({
           documentFound: false,
           forwardedTo: "consulta-sem-certificado",
           batchLimitReached:
-            remainingKeys.size > 0 && batchCount >= MAX_NSU_BATCHES_PER_FALLBACK
+            remainingKeys.size > 0 && (batchCount >= maxBatches || Date.now() >= deadline)
         })
       )
   );
+}
+
+async function processAccessKeysWithNsuDistribution(options) {
+  const plan = planCompanyBatch(options.keys, options.certificate);
+  const results = new Map();
+  // Defensive guard for direct endpoint calls and old frontends.
+  for (const key of options.keys.filter((key) => isOwnIssuedKey(key, options.certificate))) {
+    results.set(key, createLookupErrorResult({ key, error: new LookupError(
+      "Nota de emissao propria: o XML deve ser buscado sem certificado, fora da distribuicao DF-e.",
+      { errorCode: "emissao_propria_fonte_externa", lookupMode: LOOKUP_MODE_CERTIFICATE_NSU }
+    ) }));
+  }
+  for (const interestedCnpj of plan.cnpjs) {
+    const keys = options.keys.filter((key) => !isOwnIssuedKey(key, options.certificate) && plan.targetsFor(key).includes(interestedCnpj) && (!results.has(key) ||
+      (results.get(key).status !== "success" && results.get(key).errorCode !== "xml_organization_failed")));
+    if (!keys.length) continue;
+    const batch = await (options.processCompany || processAccessKeysWithNsuForCompany)({ ...options, keys, interestedCnpj });
+    for (const result of batch) {
+      const previous = results.get(result.key);
+      results.set(result.key, {
+        ...result,
+        interestedCnpj,
+        ...(previous ? {
+          initialError: previous.initialError || previous,
+          fallbackHistory: [...(previous.fallbackHistory || []), { ...previous, fallbackHistory: undefined, initialError: undefined }]
+        } : {})
+      });
+    }
+  }
+  return options.keys.map((key) => results.get(key));
 }
 
 module.exports = {
