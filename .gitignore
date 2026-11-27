@@ -12,6 +12,7 @@ test-results/
 .playwright-browsers/
 debug.log
 tmp-*
+/captcha.png
 
 # Build outputs and temporary development files
 dist/

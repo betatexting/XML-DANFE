@@ -11,7 +11,6 @@ const MAX_TOTAL_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 16000;
 const SETTLE_MS = 1500;
 const BODY_WAIT_MS = 5000;
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function shorten(value) {
   const text = String(value ?? "");
