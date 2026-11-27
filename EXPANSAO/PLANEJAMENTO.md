@@ -4,7 +4,15 @@ Data de consolidação: 12/11/2026.
 
 Este documento reúne o que foi discutido sobre a expansão do projeto. É documentação para execução futura: não representa autorização para implementar telas, autenticação, integrações ou automações neste momento. A análise técnica se refere à estrutura examinada durante a conversa; os arquivos deverão ser conferidos novamente antes da implementação.
 
+## Atualização de 18/11/2026 — login e menu autorizados
+
+Foi implementada a tela inicial de login conforme o print fornecido, com autenticação local, primeiro cadastro no aplicativo, validação de senha, sessão e bloqueio de páginas/APIs e seletores nativos até autenticação. A opção salvar preenche login e senha, criptografados com a proteção do Windows, sem entrada automática. Após entrar, é apresentado o menu conforme o segundo print fornecido. Notas Manuais abre a consulta existente; Notas Automáticas abre a base visual autorizada no print seguinte, ainda sem componentes internos. Planilhas de Chaves permanece desabilitado. As integrações e automações continuam previstas para etapas futuras.
+
+Detalhes de uso e limites estão na seção Acesso local do README. Esta atualização substitui, apenas para as etapas de login local e navegação do menu, as indicações abaixo de que toda a expansão ainda não foi implementada.
+
 ## 1. Objetivo e limites atuais
+
+Atualização de 19/11/2026: primeira versão de Planilhas de Chaves implementada com serviço headless, download/importação e filtros por empresa/período. Testes locais passaram; o piloto real da MER CALCADOS parou antes do login por erro HTTPS no ambiente. OCR e agendamentos ainda não estão implementados. Ver `VALIDACAO_COLETA_SEFAZ_2026-11-19.md` para evidências e limites desta entrega.
 
 Transformar o aplicativo em um sistema com acesso por login, menu de funcionalidades, cadastro de empresas e acompanhamento de buscas automáticas, mantendo a consulta manual existente.
 
@@ -135,6 +143,8 @@ Migrar gradualmente, preservando contratos e comportamento manual. Não criar um
 
 Responsável por autenticar no portal, consultar o período, exportar a planilha, identificar erros e entregar candidatos com proveniência. Não deve incorporar regras próprias de download e gravação de XML.
 
+A coleta também deve abranger chaves de NFC-e (modelo 65). Validar primeiro, com acesso autorizado, a origem da relação de NFC-e emitidas por empresa e período na SEFAZ-BA, o formato da exportação e o campo de data utilizado. O leitor de planilhas já aceita o modelo 65 quando informado explicitamente. A coleta atual usa o modelo 55. Ao integrar a nova origem, registrar o modelo no histórico e manter os filtros por empresa e período.
+
 ### Busca automática de XMLs
 
 Responsável por processar as chaves disponíveis conforme a política da empresa, reutilizando verificação local, mecanismos de consulta e armazenamento existentes.
@@ -150,6 +160,10 @@ Exemplo: uma exportação com cem chaves e dez falhas de download representa col
 Ainda falta definir a fonte das buscas automáticas que não forem alimentadas pelo portal, e se haverá descoberta de documentos por certificado sem uma lista prévia de chaves. Não presumir que o uso atual de NSU como tentativa para chaves conhecidas já atende a uma rotina autônoma de descoberta.
 
 ## 7. Cadastro e modelo de dados proposto
+
+Certificado A1 no cadastro: importação opcional de `.pfx`/`.p12` e senha própria, com verificação local de abertura e validade. Arquivo e senha são persistidos criptografados com a proteção do Windows e recuperáveis pelo catálogo para o futuro processador. Essa etapa não implementa agendamentos, integração com portais ou validação de autorização do titular para a empresa.
+
+Etapa implementada: cadastro local em janela independente, aberto pelo seletor de empresas, com código e inscrição estadual opcionais; razão social, tipo/número do documento (CNPJ/CPF/CEI/CAEPF) e credenciais do portal SEFAZ obrigatórios. O cadastro seleciona a nova empresa e atualiza a janela principal. Login e senha do portal são criptografados com a proteção do Windows e não são expostos nas listagens. O acesso ao portal e a validação das credenciais permanecem pendentes da definição do fluxo pelo usuário.
 
 Entidades conceituais, sujeitas à definição do modo de implantação:
 
